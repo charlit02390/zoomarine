@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zoomarine — El Biólogo de los Siete Mares</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-wrap">
+
+    <div id="topbar">
+      <div id="sea-name">Océano Ártico</div>
+      <div id="counter">Criaturas: <span id="found-count">0</span>/<span id="total-count">14</span></div>
+    </div>
+
+    <canvas id="game" width="960" height="600"></canvas>
+
+    <div id="oxygen-wrap">
+      <div id="oxygen-label">O₂</div>
+      <div id="oxygen-bar"><div id="oxygen-fill"></div></div>
+    </div>
+
+    <div id="minimap"></div>
+
+    <div id="hint">
+      WASD / Flechas: nadar · Encuentra la entrada de la cueva (roca oscura) para explorar · <b>J</b>: Bitácora
+    </div>
+
+    <button id="journal-btn" title="Bitácora (J)">📖 Bitácora</button>
+
+    <div id="zone-banner"></div>
+
+    <!-- Discovery modal -->
+    <div id="discovery-modal" class="modal hidden">
+      <div class="modal-box">
+        <div id="discovery-swatch" class="swatch"></div>
+        <h2 id="discovery-name">Criatura</h2>
+        <p id="discovery-fact">Dato curioso...</p>
+        <div class="modal-hint">Pulsa cualquier tecla o clic para continuar</div>
+      </div>
+    </div>
+
+    <!-- Journal modal -->
+    <div id="journal-modal" class="modal hidden">
+      <div class="modal-box journal-box">
+        <div class="journal-header">
+          <h2>Bitácora del Biólogo Marino</h2>
+          <button id="journal-close">✕</button>
+        </div>
+        <div id="journal-list"></div>
+      </div>
+    </div>
+
+    <!-- Win modal -->
+    <div id="win-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2>🌊 ¡Expedición completa! 🌊</h2>
+        <p>Has catalogado las 14 criaturas de los siete mares y sus cuevas.</p>
+        <button id="restart-btn">Nueva expedición</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
