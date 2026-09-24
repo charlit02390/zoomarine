@@ -18,12 +18,17 @@
   <div id="viewport"></div>
 
   <div id="topbar">
-    <div id="sea-name">Bahía de partida</div>
+    <div id="sea-name">Puerto Limón</div>
     <div id="counters">
-      <div id="counter">🐠 <span id="found-count">0</span>/<span id="total-count">14</span></div>
-      <div id="treasure-counter">🪙 <span id="treasure-found-count">0</span>/<span id="treasure-total-count">7</span></div>
+      <div id="counter" title="Criaturas descubiertas">🐠 <span id="found-count">0</span>/<span id="total-count">14</span></div>
+      <div id="treasure-counter" title="Tesoros de las cuevas">💎 <span id="treasure-found-count">0</span>/<span id="treasure-total-count">7</span></div>
+      <div id="coin-counter" title="Monedas">🪙 <span id="coin-count">0</span></div>
+      <div id="cooler-counter" title="Peces en la nevera">🧊 <span id="cooler-count">0</span>/<span id="cooler-cap">6</span></div>
     </div>
   </div>
+
+  <div id="mission-tracker" class="hidden"></div>
+  <div id="depth-meter" class="hidden"></div>
 
   <div id="oxygen-wrap">
     <div class="bar-row">
@@ -55,6 +60,16 @@
 
   <div id="zone-banner"></div>
 
+  <div id="fishing-ui" class="hidden">
+    <div id="fishing-status">Lanzando la caña...</div>
+    <div id="fishing-bars" class="hidden">
+      <div class="fish-bar-row"><span>Tensión</span><div class="fish-bar"><div id="tension-fill"></div><div class="fish-bar-danger"></div></div></div>
+      <div class="fish-bar-row"><span>Captura</span><div class="fish-bar"><div id="reel-progress-fill"></div></div></div>
+    </div>
+  </div>
+
+  <div id="catch-card"></div>
+
   <div id="touch-controls">
     <div id="joy-move" class="joystick"><div class="joy-knob"></div></div>
     <div id="joy-look" class="joystick"><div class="joy-knob"></div></div>
@@ -64,6 +79,7 @@
     </div>
     <button id="btn-dive" class="touch-btn action-btn" aria-label="Bucear / volver al barco">🤿</button>
     <button id="btn-fire" class="touch-btn action-btn fire-btn" aria-label="Disparar cañón">💥</button>
+    <button id="btn-fish" class="touch-btn action-btn" aria-label="Pescar / recoger">🎣</button>
   </div>
 
   <!-- Start screen: login + main menu -->
@@ -129,6 +145,15 @@
     </div>
   </div>
 
+  <!-- NPC dialog: missions, market, workshop -->
+  <div id="dialog-modal" class="modal hidden">
+    <div class="modal-box dialog-box">
+      <h2 id="dialog-title"></h2>
+      <div id="dialog-body"></div>
+      <div id="dialog-actions"></div>
+    </div>
+  </div>
+
   <!-- Win modal -->
   <div id="win-modal" class="modal hidden">
     <div class="modal-box">
@@ -141,6 +166,8 @@
   <script src="js/vendor/three.min.js"></script>
   <script src="js/data.js"></script>
   <script src="js/profile.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/islands.js"></script>
   <script src="js/game3d.js"></script>
   <script>
     // PWA: permite instalar el juego y jugarlo sin conexión (requiere https o localhost).

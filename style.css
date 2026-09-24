@@ -51,14 +51,158 @@ html, body {
   gap: 12px;
 }
 
-#counter, #treasure-counter {
+#counter, #treasure-counter, #coin-counter, #cooler-counter {
   color: #ffe9a8;
   font-weight: 600;
   text-shadow: 0 1px 4px rgba(0,0,0,0.6);
   font-size: 14px;
 }
 
-#treasure-counter { color: #ffd76b; }
+#treasure-counter { color: #9fe8ff; }
+#coin-counter { color: #ffd76b; }
+#cooler-counter { color: #cfefff; }
+
+#mission-tracker {
+  position: fixed;
+  top: 132px;
+  left: 18px;
+  max-width: 340px;
+  z-index: 5;
+  background: rgba(0,10,20,0.6);
+  border: 1px solid rgba(255,216,74,0.35);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #fff3c4;
+  pointer-events: none;
+}
+
+#depth-meter {
+  position: fixed;
+  top: 214px;
+  right: 18px;
+  z-index: 5;
+  background: rgba(0,10,20,0.6);
+  border: 1px solid rgba(127,224,255,0.35);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #9fe8ff;
+  pointer-events: none;
+}
+
+/* ---------------- Fishing ---------------- */
+#fishing-ui {
+  position: fixed;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: min(380px, 90vw);
+  background: rgba(0,15,28,0.78);
+  border: 1px solid rgba(127,224,255,0.4);
+  border-radius: 12px;
+  padding: 10px 14px;
+  text-align: center;
+  pointer-events: none;
+}
+#fishing-status { font-weight: 700; font-size: 15px; color: #eaf6ff; }
+#fishing-bars { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.fish-bar-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #bfe9ff; }
+.fish-bar-row span { width: 58px; text-align: right; }
+.fish-bar {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.fish-bar-danger { position: absolute; top: 0; bottom: 0; left: 75%; right: 0; background: rgba(255,60,40,0.25); }
+#tension-fill { height: 100%; width: 0; background: linear-gradient(90deg, #7cffcb, #ffd76b); }
+#tension-fill.danger { background: linear-gradient(90deg, #ffb347, #ff3b3b); }
+#reel-progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, #3fd0ff, #7cffcb); }
+
+#catch-card {
+  position: fixed;
+  top: 150px;
+  left: 50%;
+  transform: translate(-50%, -12px);
+  z-index: 7;
+  width: min(360px, 90vw);
+  background: linear-gradient(160deg, rgba(6,48,79,0.95), rgba(4,28,48,0.95));
+  border: 1px solid rgba(255,216,74,0.5);
+  border-radius: 14px;
+  padding: 12px 16px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.4s, transform 0.4s;
+  pointer-events: none;
+}
+#catch-card.show { opacity: 1; transform: translate(-50%, 0); }
+.catch-title { font-size: 13px; color: #9fc6dd; }
+.catch-name { font-size: 22px; font-weight: 800; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+.catch-kg { font-size: 13px; color: #eaf6ff; }
+.catch-note { margin-top: 6px; font-size: 13px; color: #ffe9a8; }
+.catch-fact { margin-top: 6px; font-size: 12px; color: #cfe8fa; line-height: 1.4; }
+
+/* ---------------- NPC dialogs ---------------- */
+.dialog-box { max-width: 460px; text-align: left; }
+.dialog-box h2 { font-size: 19px; }
+#dialog-body p { margin: 8px 0; }
+.mission-meta { background: rgba(255,216,74,0.1); border: 1px solid rgba(255,216,74,0.3); border-radius: 8px; padding: 8px 10px; color: #fff3c4 !important; }
+.dialog-tip { font-size: 12px !important; color: #9fc6dd !important; }
+#dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.dialog-btn {
+  background: rgba(0,20,35,0.6);
+  color: #eaf6ff;
+  border: 1px solid rgba(127,224,255,0.45);
+  border-radius: 8px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dialog-btn.primary { background: #3fd0ff; color: #012a4a; border-color: transparent; }
+.dialog-btn:hover { filter: brightness(1.15); }
+.sell-table { width: 100%; border-collapse: collapse; font-size: 13px; color: #dbeeff; }
+.sell-table td { padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.sell-table td:last-child { text-align: right; }
+.sell-table tr.total td { font-weight: 800; color: #ffd76b; border-bottom: none; }
+.shop-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-size: 13px;
+  color: #dbeeff;
+}
+.shop-row small { color: #9fc6dd; }
+.shop-buy {
+  flex-shrink: 0;
+  background: #ffd76b;
+  color: #3a2a00;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.shop-buy:disabled { opacity: 0.4; cursor: default; }
+.shop-max { color: #7cffcb; font-size: 12px; flex-shrink: 0; }
+
+.journal-section {
+  grid-column: 1 / -1;
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #7fe0ff;
+}
 
 #oxygen-wrap {
   position: fixed;
@@ -606,6 +750,16 @@ html, body {
   border-color: rgba(255, 140, 100, 0.5);
 }
 
+#btn-fish {
+  position: absolute;
+  left: calc(50% - 160px);
+  bottom: max(150px, env(safe-area-inset-bottom, 0px));
+  width: 68px;
+  height: 68px;
+  font-size: 26px;
+}
+#btn-fish.ready { border-color: #7cffcb; box-shadow: 0 0 14px rgba(124,255,203,0.7); }
+
 @media (pointer: coarse) {
   #touch-controls { display: block; }
   #hint { display: none; }
@@ -623,7 +777,7 @@ html, body {
   #oxygen-wrap { top: 40px; left: max(12px, env(safe-area-inset-left, 0px)); }
   #topbar { padding: 8px 12px; flex-direction: column; align-items: flex-start; gap: 2px; }
   #sea-name { font-size: 13px; }
-  #counter, #treasure-counter { font-size: 11px; }
+  #counter, #treasure-counter, #coin-counter, #cooler-counter { font-size: 11px; }
   #btn-fire { left: calc(50% + 78px); width: 58px; height: 58px; font-size: 20px; }
   #btn-dive { width: 66px; height: 66px; font-size: 24px; }
 }

@@ -2,7 +2,7 @@
 // Estrategia "stale-while-revalidate": responde al instante desde la caché y
 // en segundo plano baja la versión nueva, que se ve en la siguiente apertura.
 // Si cambias la lista de archivos, sube CACHE_VERSION para limpiar la caché vieja.
-const CACHE_VERSION = 'zoomarine-v1';
+const CACHE_VERSION = 'zoomarine-v3';
 
 const PRECACHE = [
   './',
@@ -12,6 +12,8 @@ const PRECACHE = [
   'js/vendor/three.min.js',
   'js/data.js',
   'js/profile.js',
+  'js/models.js',
+  'js/islands.js',
   'js/game3d.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
