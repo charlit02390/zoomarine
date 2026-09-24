@@ -1,8 +1,8 @@
 // Service worker: guarda el juego en caché para que funcione sin internet.
-// Estrategia "stale-while-revalidate": responde al instante desde la caché y
-// en segundo plano baja la versión nueva, que se ve en la siguiente apertura.
-// Si cambias la lista de archivos, sube CACHE_VERSION para limpiar la caché vieja.
-const CACHE_VERSION = 'zoomarine-v3';
+// Estrategia "red primero": con conexión siempre baja la versión más nueva
+// (saltándose la caché HTTP de GitHub Pages) y la guarda; sin conexión usa la
+// copia guardada. Si cambias la lista de archivos, sube CACHE_VERSION.
+const CACHE_VERSION = 'zoomarine-v4';
 
 const PRECACHE = [
   './',
@@ -24,7 +24,7 @@ const PRECACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_VERSION)
-      .then((cache) => cache.addAll(PRECACHE))
+      .then((cache) => cache.addAll(PRECACHE.map((url) => new Request(url, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -43,22 +43,17 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     caches.open(CACHE_VERSION).then(async (cache) => {
-      const cached = await cache.match(req, { ignoreSearch: true });
-      const network = fetch(req)
-        .then((res) => {
-          if (res.ok) cache.put(req, res.clone());
-          return res;
-        })
-        .catch(() => null);
-      if (cached) {
-        event.waitUntil(network);
-        return cached;
+      try {
+        const res = await fetch(req, { cache: 'no-cache' });
+        if (res.ok) cache.put(req, res.clone());
+        return res;
+      } catch (err) {
+        // Sin red: servir la copia guardada (y el juego para cualquier navegación).
+        const cached = await cache.match(req, { ignoreSearch: true });
+        if (cached) return cached;
+        if (req.mode === 'navigate') return cache.match('index.html');
+        return Response.error();
       }
-      const res = await network;
-      if (res) return res;
-      // Sin red y sin caché: para navegaciones, servir el juego igual.
-      if (req.mode === 'navigate') return cache.match('index.html');
-      return Response.error();
     })
   );
 });
