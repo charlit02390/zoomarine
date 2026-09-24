@@ -1436,7 +1436,20 @@
   }
 
   journalBtn.addEventListener("click", () => toggleJournal());
-  journalClose.addEventListener("click", () => toggleJournal(false));
+  journalClose.addEventListener("click", () => {
+    toggleJournal(false);
+    // opened from the menu (phones): go back to the menu
+    if (journalFromMenu) {
+      journalFromMenu = false;
+      startScreen.classList.remove("hidden");
+    }
+  });
+  let journalFromMenu = false;
+  document.getElementById("journal-menu-btn").addEventListener("click", () => {
+    journalFromMenu = true;
+    startScreen.classList.add("hidden");
+    toggleJournal(true);
+  });
 
   // ---------------- Discovery ----------------
   function openDiscovery(creature) {

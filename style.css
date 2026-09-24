@@ -702,21 +702,23 @@ html, body {
   pointer-events: none;
 }
 
+/* Action buttons sit right beside the joysticks (landscape phones): fire on the
+   left thumb, since the right stick aims the cannon; dive/fish by the right stick. */
 #vert-buttons {
   position: absolute;
-  right: 150px;
-  bottom: max(30px, env(safe-area-inset-bottom, 0px));
+  right: max(214px, calc(env(safe-area-inset-right, 0px) + 194px));
+  bottom: max(28px, env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   pointer-events: auto;
 }
 
 .touch-btn {
-  width: 54px;
-  height: 54px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
-  background: rgba(0, 20, 35, 0.65);
+  background: rgba(0, 20, 35, 0.55);
   border: 1px solid rgba(127, 224, 255, 0.45);
   color: #eaf6ff;
   font-size: 20px;
@@ -728,56 +730,89 @@ html, body {
   padding: 0;
 }
 .touch-btn:active { background: rgba(127, 224, 255, 0.35); }
-
-#btn-dive {
-  position: absolute;
-  left: 50%;
-  bottom: max(150px, env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
-  width: 76px;
-  height: 76px;
-  font-size: 28px;
-}
+#vert-buttons .touch-btn { width: 46px; height: 46px; font-size: 18px; }
 
 #btn-fire {
   position: absolute;
-  left: calc(50% + 92px);
-  bottom: max(150px, env(safe-area-inset-bottom, 0px));
-  width: 68px;
-  height: 68px;
-  font-size: 24px;
-  background: rgba(60, 10, 10, 0.65);
+  left: max(148px, calc(env(safe-area-inset-left, 0px) + 128px));
+  bottom: max(34px, env(safe-area-inset-bottom, 0px));
+  width: 56px;
+  height: 56px;
+  font-size: 22px;
+  background: rgba(60, 10, 10, 0.55);
   border-color: rgba(255, 140, 100, 0.5);
+}
+
+#btn-dive {
+  position: absolute;
+  right: max(148px, calc(env(safe-area-inset-right, 0px) + 128px));
+  bottom: max(92px, env(safe-area-inset-bottom, 0px));
+  width: 56px;
+  height: 56px;
+  font-size: 24px;
 }
 
 #btn-fish {
   position: absolute;
-  left: calc(50% - 160px);
-  bottom: max(150px, env(safe-area-inset-bottom, 0px));
-  width: 68px;
-  height: 68px;
-  font-size: 26px;
+  right: max(148px, calc(env(safe-area-inset-right, 0px) + 128px));
+  bottom: max(26px, env(safe-area-inset-bottom, 0px));
+  width: 56px;
+  height: 56px;
+  font-size: 22px;
 }
 #btn-fish.ready { border-color: #7cffcb; box-shadow: 0 0 14px rgba(124,255,203,0.7); }
-
-@media (pointer: coarse) {
-  #touch-controls { display: block; }
-  #hint { display: none; }
-}
 
 @media (max-width: 700px) {
   #journal-list { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 700px) and (pointer: coarse) {
-  #radar { width: 92px; height: 92px; top: 124px; right: max(12px, env(safe-area-inset-right, 0px)); opacity: 0.85; }
-  #journal-btn { top: 8px; right: max(12px, env(safe-area-inset-right, 0px)); bottom: auto; padding: 6px 10px; font-size: 11px; }
-  #menu-btn { top: 8px; right: max(102px, calc(env(safe-area-inset-right, 0px) + 90px)); bottom: auto; padding: 6px 10px; font-size: 11px; }
-  #save-toast { top: 44px; bottom: auto; right: max(12px, env(safe-area-inset-right, 0px)); }
-  #oxygen-wrap { top: 40px; left: max(12px, env(safe-area-inset-left, 0px)); }
-  #topbar { padding: 8px 12px; flex-direction: column; align-items: flex-start; gap: 2px; }
+/* ---------------- Phones and tablets ---------------- */
+@media (pointer: coarse) {
+  #touch-controls { display: block; }
+  #hint { display: none; }
+  /* the logbook lives in the menu; the menu button sits up by the counters */
+  #journal-btn { display: none; }
+  #menu-btn {
+    top: max(6px, env(safe-area-inset-top, 0px));
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: auto;
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+  #topbar { padding-right: max(96px, calc(env(safe-area-inset-right, 0px) + 84px)); }
+  #save-toast { top: 42px; bottom: auto; right: max(12px, env(safe-area-inset-right, 0px)); }
+  #radar { top: 42px; width: 110px; height: 110px; right: max(12px, env(safe-area-inset-right, 0px)); opacity: 0.9; }
+  #depth-meter { top: 158px; right: max(12px, env(safe-area-inset-right, 0px)); font-size: 11px; }
+  #fishing-ui { bottom: 150px; }
+}
+
+/* Short landscape screens: slimmer HUD so it doesn't cover the view */
+@media (pointer: coarse) and (max-height: 500px) {
+  #topbar { padding-top: 6px; padding-bottom: 6px; }
   #sea-name { font-size: 13px; }
+  #counter, #treasure-counter, #coin-counter, #cooler-counter { font-size: 12px; }
+  #oxygen-wrap { top: 34px; left: max(12px, env(safe-area-inset-left, 0px)); padding: 4px 8px; }
+  #oxygen-bar, #health-bar, #cruise-bar { width: 110px; height: 9px; }
+  #mission-tracker { top: 96px; left: max(12px, env(safe-area-inset-left, 0px)); max-width: 42vw; font-size: 11px; padding: 5px 8px; }
+  #radar { width: 96px; height: 96px; top: 36px; }
+  #depth-meter { top: 138px; }
+  #zone-banner { top: 70px; font-size: 20px; }
+  #catch-card { top: 50px; }
+  #fishing-ui { bottom: 100px; width: min(320px, 50vw); }
+}
+
+/* Narrow portrait phones: stack the action buttons above the joysticks */
+@media (pointer: coarse) and (max-width: 560px) {
+  #radar { width: 92px; height: 92px; top: 124px; }
+  #depth-meter { top: 222px; }
+  #oxygen-wrap { top: 40px; left: max(12px, env(safe-area-inset-left, 0px)); }
+  #topbar { flex-direction: column; align-items: flex-start; gap: 2px; }
   #counter, #treasure-counter, #coin-counter, #cooler-counter { font-size: 11px; }
-  #btn-fire { left: calc(50% + 78px); width: 58px; height: 58px; font-size: 20px; }
-  #btn-dive { width: 66px; height: 66px; font-size: 24px; }
+  #counters { gap: 8px; }
+  #mission-tracker { top: 118px; max-width: 55vw; font-size: 11px; padding: 5px 8px; }
+  #btn-fire { left: max(34px, env(safe-area-inset-left, 0px)); bottom: 158px; }
+  #btn-dive { right: max(34px, env(safe-area-inset-right, 0px)); bottom: 158px; }
+  #btn-fish { right: max(96px, calc(env(safe-area-inset-right, 0px) + 96px)); bottom: 158px; }
+  #vert-buttons { right: auto; left: 50%; transform: translateX(-50%); bottom: 40px; }
+  #fishing-ui { bottom: 230px; }
 }
