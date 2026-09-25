@@ -183,6 +183,23 @@ const FISH = [
     fact: "Su sangre es transparente: no tiene glóbulos rojos y sobrevive en el agua helada gracias a proteínas anticongelantes." },
 ];
 
+// Ballenas que nadan en manadas por los mares. Salen a respirar (con su
+// soplido), a veces saltan fuera del agua y se avistan desde el barco.
+// seas: índices de SEAS o "limon"; shape: silueta del modelo; length: largo en
+// unidades del mundo; pod: cuántas nadan juntas; calf: si una es una cría.
+const WHALES = [
+  { id: "jorobada", name: "Ballena Jorobada", color: "#3d4a57", shape: "jorobada", length: 26, pod: 2, calf: true, seas: ["limon", 4],
+    fact: "Cada año viajan miles de kilómetros hasta las aguas cálidas de Costa Rica para tener a sus crías. Los machos cantan canciones que duran horas." },
+  { id: "azul", name: "Ballena Azul", color: "#5b7a99", shape: "azul", length: 40, pod: 1, seas: [3, 5],
+    fact: "Es el animal más grande que ha existido en la Tierra: mide hasta 30 metros, más que tres buses en fila, y su soplido sube 9 metros." },
+  { id: "cachalote", name: "Cachalote", color: "#4a4440", shape: "cachalote", length: 30, pod: 2, seas: [1, 2],
+    fact: "Tiene el cerebro más grande del reino animal y baja a más de 2000 metros de profundidad a cazar calamares gigantes." },
+  { id: "beluga", name: "Beluga", color: "#eef3f5", shape: "beluga", length: 13, pod: 3, seas: [0],
+    fact: "La llaman el 'canario del mar' por sus silbidos y chasquidos. Puede mover el cuello y cambiar la forma de su frente." },
+  { id: "franca_austral", name: "Ballena Franca Austral", color: "#2a2a30", shape: "franca", length: 28, pod: 2, seas: [6],
+    fact: "Tiene callosidades blancas en la cabeza, distintas en cada ballena: los científicos las usan como huellas digitales. Su soplido tiene forma de V." },
+];
+
 // Misiones de Doña Marisol en Puerto Limón, en orden.
 const MISSIONS = [
   { id: "m_sabalo", title: "El rey del Caribe", fishId: "sabalo_real", count: 1, reward: 60, where: "cerca de Puerto Limón",

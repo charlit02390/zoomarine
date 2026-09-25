@@ -535,6 +535,115 @@ const ZMModels = (function () {
     fish.userData.tail.rotation.y = Math.sin(t * (6 + r * 8) + fish.userData.phase) * (0.35 + r * 0.25);
   }
 
+  // ---------------- Whales ----------------
+  // Lathe body from tail (-x) to nose (+x), 2 units long before scaling; each
+  // shape is 11 radii sampled tail→nose. Belly vertices are lighter.
+  const WHALE_SHAPES = {
+    jorobada: { radii: [0.02, 0.05, 0.09, 0.14, 0.18, 0.2, 0.2, 0.19, 0.17, 0.13, 0.04], pectoral: 0.62, dorsal: 0.1, belly: 0xe8ecef },
+    azul: { radii: [0.02, 0.04, 0.07, 0.1, 0.12, 0.135, 0.14, 0.135, 0.12, 0.09, 0.03], pectoral: 0.2, dorsal: 0.05, belly: 0xb8c8d6 },
+    cachalote: { radii: [0.02, 0.05, 0.09, 0.13, 0.16, 0.18, 0.19, 0.2, 0.2, 0.19, 0.13], pectoral: 0.15, dorsal: 0.07, belly: 0x6a625c },
+    beluga: { radii: [0.02, 0.06, 0.12, 0.18, 0.22, 0.24, 0.24, 0.22, 0.2, 0.18, 0.08], pectoral: 0.2, dorsal: 0, belly: 0xffffff },
+    franca: { radii: [0.02, 0.05, 0.1, 0.16, 0.21, 0.24, 0.24, 0.23, 0.2, 0.15, 0.06], pectoral: 0.22, dorsal: 0, belly: 0xd8d8dc },
+  };
+  const whaleBodyGeos = {};
+  function whaleBodyGeo(shape) {
+    if (whaleBodyGeos[shape]) return whaleBodyGeos[shape];
+    const def = WHALE_SHAPES[shape];
+    const pts = def.radii.map((r, i) => new THREE.Vector2(i === 0 || i === 10 ? 0.01 : r, -1 + (i / 10) * 2));
+    const g = new THREE.LatheGeometry(pts, 18);
+    g.rotateZ(-Math.PI / 2);
+    g.scale(1, 0.9, 1);
+    const p = g.attributes.position;
+    const top = new THREE.Color(0xffffff), belly = new THREE.Color(def.belly);
+    const cols = [];
+    for (let i = 0; i < p.count; i++) {
+      // back keeps the material colour, the belly blends toward the belly tint
+      const k = THREE.MathUtils.smoothstep(-p.getY(i), 0.02, 0.12);
+      const c = top.clone().lerp(belly, k);
+      cols.push(c.r, c.g, c.b);
+    }
+    g.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
+    g.computeVertexNormals();
+    return (whaleBodyGeos[shape] = g);
+  }
+  function flatShape(points) {
+    const g = triShape(points);
+    g.rotateX(-Math.PI / 2); // lie flat in the XZ plane
+    return g;
+  }
+  const flukeGeo = flatShape([[0.04, 0], [-0.2, 0.36], [-0.3, 0.38], [-0.17, 0.02], [-0.3, -0.38], [-0.2, -0.36]]);
+  const whaleEyeGeo = new THREE.SphereGeometry(0.018, 6, 6);
+
+  // Nose toward +x, `length` world units long. userData: tail (pivot to beat
+  // up and down), radius (body radius in world units), blowhole (local x).
+  function buildWhale(species) {
+    const def = WHALE_SHAPES[species.shape] || WHALE_SHAPES.jorobada;
+    const g = new THREE.Group();
+    const skin = new THREE.MeshStandardMaterial({ color: new THREE.Color(species.color), vertexColors: true, roughness: 0.55, metalness: 0.05 });
+    const finMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(species.color).multiplyScalar(0.85), roughness: 0.6, side: THREE.DoubleSide });
+    const body = new THREE.Mesh(whaleBodyGeo(species.shape), skin);
+    body.castShadow = true;
+    g.add(body);
+
+    const tail = new THREE.Group();
+    tail.position.x = -0.92;
+    const fluke = new THREE.Mesh(flukeGeo, finMat);
+    fluke.scale.setScalar(species.shape === "beluga" ? 0.8 : 1);
+    tail.add(fluke);
+    g.add(tail);
+
+    // pectoral fins: humpbacks have huge white "wings"
+    const pecMat = species.shape === "jorobada" ? std(0xdfe4e8, { roughness: 0.6, side: THREE.DoubleSide }) : finMat;
+    const L = def.pectoral;
+    const pecGeo = flatShape([[0.06, 0], [-0.06, 0], [-L * 0.35, L], [-L * 0.2, L * 0.9]]);
+    [-1, 1].forEach((s) => {
+      const pec = new THREE.Mesh(pecGeo, pecMat);
+      pec.position.set(0.32, -0.1, s * 0.15);
+      pec.scale.z = -s; // the flat shape points toward -z
+      pec.rotation.x = s * 0.45; // droop down and out
+      g.add(pec);
+    });
+
+    if (def.dorsal) {
+      const d = new THREE.Mesh(triShape([[0.05, 0], [-0.12, 0], [-0.1, def.dorsal]]), finMat);
+      const r = def.radii[3] * 0.9;
+      d.position.set(-0.35, r - 0.01, 0);
+      g.add(d);
+    }
+
+    // eyes low on the head, where the mouth line ends
+    const eyeX = species.shape === "cachalote" ? 0.45 : 0.62;
+    const eyeR = def.radii[Math.round(((eyeX + 1) / 2) * 10)] * 0.9;
+    [-1, 1].forEach((s) => {
+      const e = new THREE.Mesh(whaleEyeGeo, eyeMat);
+      e.position.set(eyeX, -eyeR * 0.35, s * eyeR * 0.93);
+      g.add(e);
+    });
+
+    // southern right whales: white callosities on the head
+    if (species.shape === "franca") {
+      const callus = std(0xe9e4d6, { roughness: 0.9 });
+      [[0.9, 0.04, 0], [0.8, 0.08, 0.04], [0.8, 0.08, -0.04], [0.7, 0.12, 0.07], [0.7, 0.12, -0.07]].forEach(([x, y, z]) => {
+        const c = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 5), callus);
+        c.position.set(x, y, z);
+        c.scale.y = 0.5;
+        g.add(c);
+      });
+    }
+
+    const len = species.length || 20;
+    g.scale.setScalar(len / 2);
+    const maxR = Math.max(...def.radii);
+    g.userData = { tail, radius: (maxR * len) / 2, blowhole: species.shape === "cachalote" ? 0.95 : 0.6, phase: Math.random() * 10 };
+    return g;
+  }
+
+  // Tail beats up and down; `rate` ~1 cruising, higher when diving or leaping.
+  function swimWhale(w, t, rate) {
+    const r = rate === undefined ? 1 : rate;
+    w.userData.tail.rotation.z = Math.sin(t * (1.2 + r * 0.9) + w.userData.phase) * (0.18 + r * 0.12);
+  }
+
   // ---------------- People ----------------
   // Jointed figure (hips/knees, shoulders/elbows) facing -z, ~2.6 units tall.
   // Options: skin, shirt, bottom ('shorts'|'pants'|'skirt'), bottomColor,
@@ -1523,6 +1632,8 @@ const ZMModels = (function () {
     buildPirateShip,
     buildFish,
     swimFish,
+    buildWhale,
+    swimWhale,
     buildPerson,
     animatePerson,
     buildHouse,

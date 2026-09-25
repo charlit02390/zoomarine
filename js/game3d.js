@@ -1081,6 +1081,8 @@
     chestsOpened: new Set(),
     seaChests: new Set(), // sunken chests already opened
     mythics: new Set(), // Atlantis treasures found
+    whalesSeen: new Set(), // whale species sighted
+    whaleBannerCooldown: 0,
     atlantisKnown: false,
     diveAnchor: { x: 0, z: 0 },
     fishing: null,
@@ -1408,6 +1410,17 @@
         : `<h4>${f.special ? "⭐ ???" : "???"}</h4><p>${f.special ? "Pez legendario: aparece en una misión." : "Aún no pescado."}</p>`;
       journalList.appendChild(entry);
     });
+    heading("🐋 Ballenas avistadas");
+    WHALES.forEach((w) => {
+      const seen = state.whalesSeen.has(w.id);
+      const where = w.seas.map(regionName).join(" · ");
+      const entry = document.createElement("div");
+      entry.className = "journal-entry" + (seen ? "" : " locked");
+      entry.innerHTML = seen
+        ? `<h4 style="color:${w.color}">${w.name}</h4><p><em>${where}</em><br>${w.fact}</p>`
+        : `<h4>???</h4><p><em>${where}</em><br>Busca su soplido en el horizonte.</p>`;
+      journalList.appendChild(entry);
+    });
     heading("🔱 Tesoros de la Atlántida");
     MYTHIC_TREASURES.forEach((t) => {
       const got = state.mythics.has(t.id);
@@ -1669,6 +1682,7 @@
       chestsOpened: [...state.chestsOpened],
       seaChests: [...state.seaChests],
       mythics: [...state.mythics],
+      whalesSeen: [...state.whalesSeen],
       atlantisKnown: state.atlantisKnown,
       playTime: state.playTime,
       savedAt: Date.now(),
@@ -1701,6 +1715,7 @@
     state.chestsOpened.clear();
     state.seaChests.clear();
     state.mythics.clear();
+    state.whalesSeen.clear();
     state.atlantisKnown = false;
     moorAtHome();
     camLookInit = false;
@@ -1741,6 +1756,7 @@
     (data.chestsOpened || []).forEach((i) => state.chestsOpened.add(i));
     (data.seaChests || []).forEach((i) => state.seaChests.add(i));
     (data.mythics || []).forEach((i) => state.mythics.add(i));
+    (data.whalesSeen || []).forEach((i) => state.whalesSeen.add(i));
     state.atlantisKnown = !!data.atlantisKnown;
     if (!data.version || data.version < 2) moorAtHome(); // older saves: Puerto Limón now sits at the old start point
     const pl = data.player;
@@ -2662,6 +2678,233 @@
       });
       if (s.beam) s.beam.material.opacity = 0.14 + Math.sin(t * 3) * 0.05;
     });
+  }
+
+  // ---------------- Whales ----------------
+  // A pod per species and sea (humpbacks with a calf also visit Puerto Limón)
+  // cruises around open water: they swim below the surface, come up to blow a
+  // few times, sometimes breach, then dive again. The first sighting of each
+  // species goes into the journal.
+  const WHALE_SIGHT_RANGE = 130;
+  const WHALE_ROAM = 150;
+  const WHALE_VIEW_DIST = 1800;
+
+  // spout and splash spray: a small pool of fading puffs
+  const puffGeo = new THREE.SphereGeometry(1, 8, 6);
+  const puffs = [];
+  for (let i = 0; i < 120; i++) {
+    const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0xf4fbff, transparent: true, opacity: 0, depthWrite: false }));
+    m.visible = false;
+    mainScene.add(m);
+    puffs.push({ m, life: 0, max: 1, from: new THREE.Vector3(), move: new THREE.Vector3(), arc: false, size: 1 });
+  }
+  let puffCursor = 0;
+  // The puff drifts by `move` over its life, easing out; with `arc` it rises
+  // and falls back (splash spray) instead of hanging in the air (spout mist).
+  function emitPuff(x, y, z, mx, my, mz, size, life, arc) {
+    const p = puffs[puffCursor];
+    puffCursor = (puffCursor + 1) % puffs.length;
+    p.from.set(x, y, z);
+    p.move.set(mx, my, mz);
+    p.arc = !!arc;
+    p.size = size;
+    p.life = p.max = life;
+    p.m.visible = true;
+  }
+  // column of mist from the blowhole; right whales blow a V
+  function emitSpout(x, y, z, height, heading, vShape) {
+    const sx = -Math.sin(heading), sz = Math.cos(heading);
+    for (let i = 0; i < 9; i++) {
+      const up = height * (0.3 + (i / 8) * 0.8);
+      const lean = vShape ? (i % 2 ? 1 : -1) * up * 0.35 : rand(-0.08, 0.08) * up;
+      emitPuff(x, y, z, sx * lean, up, sz * lean, height * (0.05 + (i / 8) * 0.07), rand(1.8, 2.4));
+    }
+  }
+  function updatePuffs(dt) {
+    puffs.forEach((p) => {
+      if (!p.m.visible) return;
+      p.life -= dt;
+      if (p.life <= 0) {
+        p.m.visible = false;
+        return;
+      }
+      const k = 1 - p.life / p.max;
+      const ease = 1 - Math.pow(1 - Math.min(1, k * 1.6), 3);
+      p.m.position.copy(p.from).addScaledVector(p.move, p.arc ? k : ease);
+      if (p.arc) p.m.position.y = p.from.y + p.move.y * 4 * k * (1 - k);
+      p.m.scale.setScalar(p.size * (0.6 + k * 2));
+      p.m.material.opacity = 0.9 * (1 - k * k);
+    });
+  }
+
+  const whalePods = [];
+  function createPod(species, region) {
+    const limon = region === "limon";
+    const home = openWaterSpot(region, limon ? 230 : 40, limon ? 330 : 180);
+    const pod = {
+      species, region, homeX: home.x, homeZ: home.z, x: home.x, z: home.z,
+      heading: rand(0, Math.PI * 2), t: rand(0, 50), phaseT: 99,
+      surfacing: Math.random() < 0.5, timer: rand(3, 10), members: [],
+    };
+    for (let i = 0; i < species.pod; i++) {
+      const calf = !!species.calf && i === species.pod - 1 && i > 0;
+      const sp = calf ? Object.assign({}, species, { length: species.length * 0.45 }) : species;
+      const mesh = ZMModels.buildWhale(sp);
+      mesh.rotation.order = "YZX"; // roll about the body, then pitch, then heading
+      mainScene.add(mesh);
+      const L = sp.length;
+      pod.members.push({
+        mesh, length: L, radius: mesh.userData.radius,
+        // formation in the pod's frame: calves tuck in beside their mother
+        fwd: calf ? species.length * 0.1 : -species.length * 0.35 * i,
+        side: calf ? mesh.userData.radius * 1.4 + pod.members[0].radius : (i % 2 ? 1 : -1) * species.length * 0.4 * Math.ceil(i / 2),
+        lag: i * 0.8, // members surface one after another
+        depthK: pod.surfacing ? 1 : 0, pitch: 0, y: 0,
+        spoutTimer: rand(0.5, 3), breach: null,
+      });
+    }
+    whalePods.push(pod);
+  }
+  WHALES.forEach((w) => w.seas.forEach((r) => createPod(w, r)));
+
+  function startBreach(m) {
+    whaleSplash(m.mesh.position.x, m.mesh.position.z, m); // bursting out
+    m.breach = { t: 0, dur: 1.6 + m.length * 0.04, h: m.length * 0.55, roll: m.mesh.userData.phase % 2 < 1 ? 1 : -1 };
+  }
+  function whaleSplash(x, z, m) {
+    const r = m.radius;
+    for (let i = 0; i < 12; i++) {
+      const a = rand(0, Math.PI * 2), d = rand(0, m.length * 0.4);
+      emitWake(x + Math.cos(a) * d, z + Math.sin(a) * d, r * rand(0.5, 1), rand(1.5, 2.5));
+    }
+    for (let i = 0; i < 10; i++) {
+      const a = rand(0, Math.PI * 2), d = rand(0.5, 1.5) * r;
+      emitPuff(x, 0.5, z, Math.cos(a) * d, rand(0.8, 2) * r, Math.sin(a) * d, r * 0.3, rand(0.9, 1.4), true);
+    }
+    spawnSplash(new THREE.Vector3(x, 0, z));
+  }
+
+  function sightWhale(species) {
+    if (!state.whalesSeen.has(species.id)) {
+      state.whalesSeen.add(species.id);
+      saveGame();
+      openDiscovery({ name: "🐋 " + species.name, fact: species.fact, color: species.color });
+    } else if (state.whaleBannerCooldown <= 0) {
+      showBanner(`🐋 ¡${species.name} a la vista!`);
+    }
+    state.whaleBannerCooldown = 60;
+  }
+
+  // Pushes the boat out of a surfaced whale (the body as a capsule).
+  function whaleBoatCollision(m, heading) {
+    const hx = Math.cos(heading), hz = Math.sin(heading);
+    const p = m.mesh.position;
+    const dx = boat.position.x - p.x, dz = boat.position.z - p.z;
+    const along = THREE.MathUtils.clamp(dx * hx + dz * hz, -m.length * 0.4, m.length * 0.4);
+    const cx = p.x + hx * along, cz = p.z + hz * along;
+    const ex = boat.position.x - cx, ez = boat.position.z - cz;
+    const d = Math.hypot(ex, ez), min = m.radius + BOAT_COLLIDE_RADIUS;
+    if (d < min && d > 0.001) {
+      boat.position.x = cx + (ex / d) * min;
+      boat.position.z = cz + (ez / d) * min;
+      boatState.speed *= 0.6;
+    }
+  }
+
+  function updateWhales(dt) {
+    const t = state.time;
+    state.whaleBannerCooldown = Math.max(0, state.whaleBannerCooldown - dt);
+    const playing = state.started && !state.modalOpen && !state.journalOpen && !state.won;
+    const viewer = state.mode === "walk" ? player.pos : state.mode === "boat" ? boat.position : camera.position;
+    whalePods.forEach((pod) => {
+      const sp = pod.species;
+      pod.t += dt;
+      pod.phaseT += dt;
+      // surface / dive cycle
+      pod.timer -= dt;
+      if (pod.timer <= 0) {
+        pod.surfacing = !pod.surfacing;
+        pod.phaseT = 0;
+        pod.timer = pod.surfacing ? rand(10, 16) : rand(12, 22);
+        if (!pod.surfacing && sp.shape !== "beluga" && Math.random() < (sp.shape === "jorobada" ? 0.6 : 0.3)) {
+          const m = pod.members[Math.floor(Math.random() * pod.members.length)];
+          if (!m.breach && m.depthK > 0.9) startBreach(m);
+        }
+      }
+      // wander near home, steering clear of islands
+      pod.heading += Math.sin(pod.t * 0.13 + pod.homeX) * 0.12 * dt;
+      if (Math.hypot(pod.homeX - pod.x, pod.homeZ - pod.z) > WHALE_ROAM) {
+        const want = Math.atan2(pod.homeZ - pod.z, pod.homeX - pod.x);
+        pod.heading += Math.sign(Math.sin(want - pod.heading)) * 0.25 * dt;
+      }
+      const ahead = sp.length + 50;
+      const lx = pod.x + Math.cos(pod.heading) * ahead, lz = pod.z + Math.sin(pod.heading) * ahead;
+      for (const isl of islands) {
+        if (islandShoreDistance(isl, lx, lz) < 30) {
+          const away = Math.atan2(pod.z - isl.z, pod.x - isl.x);
+          pod.heading += Math.sign(Math.sin(away - pod.heading) || 1) * 0.6 * dt;
+          break;
+        }
+      }
+      const speed = pod.surfacing ? 4 : 6.5;
+      pod.x += Math.cos(pod.heading) * speed * dt;
+      pod.z += Math.sin(pod.heading) * speed * dt;
+
+      const far = Math.hypot(pod.x - camera.position.x, pod.z - camera.position.z) > WHALE_VIEW_DIST;
+      const hx = Math.cos(pod.heading), hz = Math.sin(pod.heading);
+      pod.members.forEach((m) => {
+        m.mesh.visible = !far && state.mode !== "cave";
+        if (!m.mesh.visible) return;
+        const p = m.mesh.position;
+        p.x = pod.x + hx * m.fwd - hz * m.side;
+        p.z = pod.z + hz * m.fwd + hx * m.side;
+        const surfaceY = waveHeight(p.x, p.z, t) - m.radius * 0.15; // the back breaks the surface
+        const deepY = -m.radius - (sp.shape === "beluga" ? 7 : 14);
+        const want = (pod.phaseT > m.lag) === pod.surfacing ? 1 : 0; // members follow the leader up and down
+        m.depthK += THREE.MathUtils.clamp(want - m.depthK, -0.18 * dt, 0.18 * dt);
+        const prevY = m.y;
+        let roll = 0;
+        if (m.breach) {
+          const b = m.breach;
+          b.t += dt;
+          const k = Math.min(1, b.t / b.dur);
+          m.y = surfaceY - m.radius + Math.sin(Math.PI * k) * b.h;
+          m.pitch = 1.25 * (1 - 2 * k);
+          roll = b.roll * k * (sp.shape === "jorobada" ? 1.6 : 0.6);
+          if (k >= 1) {
+            whaleSplash(p.x + hx * m.length * 0.3, p.z + hz * m.length * 0.3, m);
+            m.breach = null;
+            m.depthK = 1;
+          }
+        } else {
+          m.y = THREE.MathUtils.lerp(deepY, surfaceY, THREE.MathUtils.smoothstep(m.depthK, 0, 1));
+          const target = THREE.MathUtils.clamp(((m.y - prevY) / Math.max(dt, 1e-3)) * 0.12, -0.45, 0.35);
+          m.pitch += (target - m.pitch) * Math.min(1, dt * 2);
+        }
+        p.y = m.y;
+        m.mesh.rotation.set(roll, -pod.heading, m.pitch);
+        ZMModels.swimWhale(m.mesh, t, m.breach ? 2.5 : pod.surfacing ? 0.6 : 1.1);
+
+        const atSurface = m.breach || m.depthK > 0.85;
+        // blow while at the surface
+        if (atSurface && !m.breach) {
+          m.spoutTimer -= dt;
+          if (m.spoutTimer <= 0) {
+            m.spoutTimer = rand(3.5, 6);
+            const bh = m.mesh.userData.blowhole * m.length * 0.5;
+            emitSpout(p.x + hx * bh, surfaceY + m.radius * 0.8, p.z + hz * bh, Math.max(4, m.length * 0.35), pod.heading, sp.shape === "franca");
+          }
+        }
+        if (atSurface && state.mode === "boat") whaleBoatCollision(m, pod.heading);
+
+        if (playing && state.mode !== "cave") {
+          const d = Math.hypot(p.x - viewer.x, p.z - viewer.z) - m.length * 0.5;
+          const seen = state.mode === "dive" ? d < 70 && Math.abs(p.y - viewer.y) < 60 : atSurface && d < WHALE_SIGHT_RANGE;
+          if (seen) sightWhale(sp);
+        }
+      });
+    });
+    updatePuffs(dt);
   }
 
   // ---------------- Fishing ----------------
@@ -3856,6 +4099,7 @@
       updateWake(dt, state.time);
       updateGulls(state.time);
       updateSchools(dt);
+      updateWhales(dt);
       clouds.rotation.y += dt * 0.002;
       boatModel.radar.rotation.y += dt * 2.5;
 
