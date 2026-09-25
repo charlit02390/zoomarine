@@ -1077,11 +1077,14 @@
     fishLog: {}, // species id -> how many caught
     missionIndex: 0,
     mission: null, // { status: 'active' | 'done', progress }
-    upgrades: { rod: 0, cooler: 0, engine: 0, dive: 0 },
+    upgrades: { rod: 0, cooler: 0, engine: 0, dive: 0, harpoon: 0 },
     chestsOpened: new Set(),
     seaChests: new Set(), // sunken chests already opened
     mythics: new Set(), // Atlantis treasures found
     whalesSeen: new Set(), // whale species sighted
+    krakenDefeated: false,
+    harpoonCooldown: 0,
+    diverInvuln: 0, // seconds of grace after a bite or a tentacle grab
     whaleBannerCooldown: 0,
     atlantisKnown: false,
     diveAnchor: { x: 0, z: 0 },
@@ -1108,6 +1111,7 @@
     if (e.code === "KeyF" && !e.repeat) handleDiveKey();
     if (e.code === "KeyR" && !e.repeat) handleFishKey();
     if (e.code === "Space" && !e.repeat && state.mode === "boat") fireCannon();
+    if (e.code === "KeyE" && !e.repeat) fireHarpoon();
   });
   window.addEventListener("keyup", (e) => {
     keys[e.code] = false;
@@ -1234,7 +1238,8 @@
     "touchstart",
     (e) => {
       e.preventDefault();
-      fireCannon();
+      if (state.mode === "boat") fireCannon();
+      else fireHarpoon();
     },
     { passive: false }
   );
@@ -1248,14 +1253,17 @@
     if (e.button !== 0) return;
     state.mouseDown = true;
     if (state.fishing) handleFishKey(); // while fishing the mouse reels instead of firing
-    else fireCannon();
+    else if (state.mode === "boat") fireCannon();
+    else fireHarpoon();
   });
   window.addEventListener("mouseup", () => (state.mouseDown = false));
 
   function updateTouchUI() {
     const diving = state.mode === "dive" || state.mode === "cave";
     vertButtonsEl.classList.toggle("hidden", !diving);
-    btnFireEl.classList.toggle("hidden", state.mode !== "boat");
+    btnFireEl.classList.toggle("hidden", state.mode === "walk");
+    btnFireEl.textContent = diving ? "🔱" : "💥";
+    btnFireEl.setAttribute("aria-label", diving ? "Disparar arpón" : "Disparar cañón");
     btnFishEl.classList.toggle("hidden", state.mode !== "boat");
     btnDiveEl.textContent = diving ? "⬆" : state.mode === "walk" ? "✋" : "🤿";
   }
@@ -1367,8 +1375,8 @@
   const HINTS = {
     boat: "WASD: navegar · Ratón: apuntar · Clic: disparar · <b>R</b>: pescar · <b>F</b>: bucear aquí / desembarcar en isla · <b>J</b>: Bitácora",
     walk: "WASD / Flechas: caminar · Shift: correr · <b>F</b>: hablar, abrir cofres o subir al barco · <b>J</b>: Bitácora",
-    dive: "WASD: nadar · Flechas: mirar · Espacio/Shift: subir/bajar · Busca cofres 🧰 y cuevas en las montañas · <b>F</b>: volver al barco · <b>J</b>: Bitácora",
-    cave: "Usa el sonar: 🟡 tesoro · 🔵 salida · punto que late = criatura · WASD: nadar · Flechas: mirar · <b>F</b>: volver al barco",
+    dive: "WASD: nadar · Flechas: mirar · Espacio/Shift: subir/bajar · Clic/<b>E</b>: arpón 🔱 · Busca cofres 🧰 y cuevas en las montañas · <b>F</b>: volver al barco · <b>J</b>: Bitácora",
+    cave: "Usa el sonar: 🟡 tesoro · 🔵 salida · punto que late = criatura · Clic/<b>E</b>: arpón · WASD: nadar · Flechas: mirar · <b>F</b>: volver al barco",
   };
 
   function updateHint() {
@@ -1431,6 +1439,12 @@
         : `<h4>???</h4><p>${state.atlantisKnown ? "Escondido en las ruinas de la Atlántida." : "Tata Chema conoce una leyenda..."}</p>`;
       journalList.appendChild(entry);
     });
+    const krakenEntry = document.createElement("div");
+    krakenEntry.className = "journal-entry" + (state.krakenDefeated ? "" : " locked");
+    krakenEntry.innerHTML = state.krakenDefeated
+      ? `<h4 style="color:#ff6b81">🦑 Kraken (vencido)</h4><p>${KRAKEN.fact}</p>`
+      : `<h4>🦑 ???</h4><p>Algo enorme duerme bajo las ruinas... lleva un buen arpón.</p>`;
+    journalList.appendChild(krakenEntry);
     heading("🐠 Criaturas de los siete mares");
     SEAS.forEach((sea) => {
       [
@@ -1683,6 +1697,7 @@
       seaChests: [...state.seaChests],
       mythics: [...state.mythics],
       whalesSeen: [...state.whalesSeen],
+      krakenDefeated: state.krakenDefeated,
       atlantisKnown: state.atlantisKnown,
       playTime: state.playTime,
       savedAt: Date.now(),
@@ -1711,11 +1726,14 @@
     state.fishLog = {};
     state.missionIndex = 0;
     state.mission = null;
-    state.upgrades = { rod: 0, cooler: 0, engine: 0, dive: 0 };
+    state.upgrades = { rod: 0, cooler: 0, engine: 0, dive: 0, harpoon: 0 };
     state.chestsOpened.clear();
     state.seaChests.clear();
     state.mythics.clear();
     state.whalesSeen.clear();
+    state.krakenDefeated = false;
+    kr.mode = "sleep";
+    kr.hp = KRAKEN.health;
     state.atlantisKnown = false;
     moorAtHome();
     camLookInit = false;
@@ -1752,11 +1770,12 @@
     state.fishLog = data.fishLog || {};
     state.missionIndex = Math.min(MISSIONS.length, data.missionIndex || 0);
     state.mission = data.mission && MISSIONS[state.missionIndex] ? data.mission : null;
-    state.upgrades = Object.assign({ rod: 0, cooler: 0, engine: 0, dive: 0 }, data.upgrades);
+    state.upgrades = Object.assign({ rod: 0, cooler: 0, engine: 0, dive: 0, harpoon: 0 }, data.upgrades);
     (data.chestsOpened || []).forEach((i) => state.chestsOpened.add(i));
     (data.seaChests || []).forEach((i) => state.seaChests.add(i));
     (data.mythics || []).forEach((i) => state.mythics.add(i));
     (data.whalesSeen || []).forEach((i) => state.whalesSeen.add(i));
+    state.krakenDefeated = !!data.krakenDefeated;
     state.atlantisKnown = !!data.atlantisKnown;
     if (!data.version || data.version < 2) moorAtHome(); // older saves: Puerto Limón now sits at the old start point
     const pl = data.player;
@@ -1905,6 +1924,7 @@
     const depth = Math.round(-seabedHeight(x, z));
     seaNameEl.textContent = regionName(regionAt(x, z));
     showBanner(`🤿 Fondo a ${depth} m · tu equipo llega a ${diveDepthLimit()} m`);
+    resetSharks();
     updateHint();
     updateTouchUI();
   }
@@ -1964,6 +1984,7 @@
     camera.position.copy(z.entranceWorld).addScaledVector(z.outward, 36);
     camera.position.y += 4;
     state.yaw = yawToward(camera.position, z.buoyWorld);
+    resetSharks();
     state.pitch = 0;
     setUnderwater();
     seaNameEl.textContent = z.sea.name;
@@ -2455,6 +2476,428 @@
         }
       }
     });
+  }
+
+  // ---------------- Harpoon ----------------
+  // Underwater weapon: click / E / 🔱 fires a spear where the diver looks.
+  // It scares sharks off and is the only way to beat the Kraken.
+  const harpoonGun = ZMModels.buildHarpoonGun();
+  harpoonGun.scale.setScalar(0.45);
+  harpoonGun.position.set(0.42, -0.36, -1.1);
+  harpoonGun.rotation.y = 0.06;
+  harpoonGun.visible = false;
+  camera.add(harpoonGun);
+  const spears = [];
+  const spearDir = new THREE.Vector3();
+  const SPEAR_AXIS = new THREE.Vector3(0, 0, -1);
+
+  function harpoonStat(key) {
+    return UPGRADES.harpoon[key][state.upgrades.harpoon || 0];
+  }
+
+  function fireHarpoon() {
+    const diving = state.mode === "dive" || state.mode === "cave";
+    if (!state.started || !diving || state.modalOpen || state.journalOpen || state.won) return;
+    if (state.harpoonCooldown > 0) return;
+    state.harpoonCooldown = harpoonStat("reload");
+    computeLookVectors();
+    spearDir.copy(forwardVec);
+    const mesh = ZMModels.buildHarpoonSpear();
+    mesh.quaternion.setFromUnitVectors(SPEAR_AXIS, spearDir);
+    mesh.position.copy(camera.position).addScaledVector(spearDir, 2).add(new THREE.Vector3(0, -0.4, 0));
+    const scene = state.mode === "cave" ? caveScene : mainScene;
+    scene.add(mesh);
+    spears.push({ mesh, scene, dir: spearDir.clone(), speed: harpoonStat("speed"), left: harpoonStat("range"), stuck: 0 });
+    harpoonGun.userData.kick = 1;
+  }
+
+  function removeSpear(i) {
+    spears[i].scene.remove(spears[i].mesh);
+    spears.splice(i, 1);
+  }
+
+  function updateHarpoon(dt) {
+    const diving = state.mode === "dive" || state.mode === "cave";
+    harpoonGun.visible = diving;
+    state.harpoonCooldown = Math.max(0, state.harpoonCooldown - dt);
+    const kick = (harpoonGun.userData.kick = Math.max(0, (harpoonGun.userData.kick || 0) - dt * 5));
+    harpoonGun.position.z = -1.1 + kick * 0.1;
+    harpoonGun.rotation.x = kick * 0.2;
+    harpoonGun.userData.spear.visible = state.harpoonCooldown <= 0;
+
+    for (let i = spears.length - 1; i >= 0; i--) {
+      const s = spears[i];
+      if (!diving || s.scene !== (state.mode === "cave" ? caveScene : mainScene)) {
+        removeSpear(i);
+        continue;
+      }
+      if (s.stuck > 0) {
+        if ((s.stuck -= dt) <= 0) removeSpear(i);
+        continue;
+      }
+      const step = s.speed * dt;
+      s.mesh.position.addScaledVector(s.dir, step);
+      s.left -= step;
+      const tip = s.mesh.position;
+      if (s.scene === mainScene && (spearHitsShark(tip) || spearHitsKraken(tip))) {
+        removeSpear(i);
+        continue;
+      }
+      const floor = s.scene === mainScene ? seabedHeight(tip.x, tip.z) : -Infinity;
+      if (tip.y < floor) {
+        s.stuck = 3; // stuck in the sand for a moment
+        continue;
+      }
+      if (s.left <= 0 || tip.y > 0) removeSpear(i);
+    }
+  }
+
+  // Bites and tentacle grabs tear the diver's air hose: they cost oxygen.
+  function hurtDiver(amount, text) {
+    if (state.diverInvuln > 0) return;
+    state.diverInvuln = 1.5;
+    state.oxygen = Math.max(1, state.oxygen - amount);
+    hitFlashEl.classList.add("show");
+    setTimeout(() => hitFlashEl.classList.remove("show"), 250);
+    showBanner(text);
+  }
+
+  // ---------------- Sharks ----------------
+  // A few sharks follow the diver around, circling at a distance. Now and then
+  // one charges; a harpoon hit sends it away, and enough hits chase it off.
+  const sharks = [];
+  for (let i = 0; i < SHARKS.count; i++) {
+    const mesh = ZMModels.buildShark(SHARKS.color, 3.6);
+    mesh.rotation.order = "YZX";
+    mesh.visible = false;
+    mainScene.add(mesh);
+    sharks.push({ mesh, hp: SHARKS.health, mode: "away", timer: 0, angle: 0, radius: 60, yOff: 0, flash: 0, vel: new THREE.Vector3() });
+  }
+  const sharkTmp = new THREE.Vector3();
+
+  function placeShark(sh, first) {
+    sh.hp = SHARKS.health;
+    sh.mode = "circle";
+    sh.angle = rand(0, Math.PI * 2);
+    sh.radius = rand(45, 80);
+    sh.yOff = rand(-12, 8);
+    sh.timer = first ? rand(9, 20) : rand(12, 24); // until it charges
+    const c = camera.position;
+    sh.mesh.position.set(c.x + Math.cos(sh.angle) * (sh.radius + 60), c.y + sh.yOff, c.z + Math.sin(sh.angle) * (sh.radius + 60));
+    sh.vel.set(0, 0, 0);
+    const color = SHARKS.colors[regionAt(c.x, c.z)] || SHARKS.color;
+    sh.mesh.userData.mainMaterial.color.set(color);
+  }
+
+  // Sharks share the sea with the diver: fewer close to Puerto Limón.
+  function resetSharks() {
+    const c = camera.position;
+    const n = regionAt(c.x, c.z) === "limon" ? 1 : SHARKS.count;
+    sharks.forEach((sh, i) => {
+      if (i < n) placeShark(sh, true);
+      else sh.mode = "away";
+      sh.respawn = rand(20, 35);
+    });
+  }
+
+  function spearHitsShark(tip) {
+    for (const sh of sharks) {
+      if (!sh.mesh.visible || sh.mode === "away" || sh.mode === "scared") continue;
+      if (tip.distanceTo(sh.mesh.position) > 5.5) continue;
+      sh.hp -= harpoonStat("damage");
+      sh.flash = 0.2;
+      if (sh.hp <= 0) {
+        sh.mode = "scared";
+        sh.timer = 4;
+        showBanner("🦈 ¡El tiburón huye asustado!");
+      } else {
+        sh.mode = "flee";
+        sh.timer = 3;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function steerShark(sh, target, speed, dt) {
+    sharkTmp.copy(target).sub(sh.mesh.position);
+    const d = sharkTmp.length();
+    if (d > 0.01) sharkTmp.multiplyScalar(speed / d);
+    sh.vel.lerp(sharkTmp, Math.min(1, dt * 2.2));
+    sh.mesh.position.addScaledVector(sh.vel, dt);
+  }
+
+  function updateSharks(dt) {
+    const active = state.mode === "dive";
+    const c = camera.position;
+    const attacking = sharks.some((s) => s.mode === "attack");
+    sharks.forEach((sh) => {
+      if (!active) {
+        sh.mesh.visible = false;
+        return;
+      }
+      if (sh.mode === "away") {
+        sh.mesh.visible = false;
+        if (sh.respawn !== undefined && (sh.respawn -= dt) <= 0 && regionAt(c.x, c.z) !== "limon") {
+          sh.respawn = rand(25, 40);
+          placeShark(sh, false);
+        }
+        return;
+      }
+      sh.mesh.visible = true;
+      const p = sh.mesh.position;
+      sh.timer -= dt;
+      if (sh.mode === "circle") {
+        sh.angle += (11 / sh.radius) * dt;
+        sharkTmp.set(c.x + Math.cos(sh.angle) * sh.radius, c.y + sh.yOff, c.z + Math.sin(sh.angle) * sh.radius);
+        steerShark(sh, sharkTmp.clone(), 12, dt);
+        if (sh.timer <= 0 && !attacking && state.diverInvuln <= 0 && state.cooldown <= 0) {
+          sh.mode = "attack";
+          sh.timer = 8;
+          showBanner("🦈 ¡Cuidado, un tiburón viene hacia ti!");
+        }
+      } else if (sh.mode === "attack") {
+        steerShark(sh, c, 23, dt);
+        if (p.distanceTo(c) < 5) {
+          hurtDiver(SHARKS.bite, "🦈 ¡Mordida! Pierdes aire");
+          sh.mode = "flee";
+          sh.timer = 4;
+        } else if (sh.timer <= 0) sh.mode = "flee";
+      } else {
+        // flee / scared: swim straight away from the diver
+        sharkTmp.copy(p).sub(c).setY(0).normalize().multiplyScalar(80).add(p);
+        steerShark(sh, sharkTmp, sh.mode === "scared" ? 34 : 26, dt);
+        if (sh.timer <= 0) {
+          if (sh.mode === "scared") {
+            sh.mode = "away";
+            sh.respawn = rand(25, 40);
+          } else {
+            sh.mode = "circle";
+            sh.angle = Math.atan2(p.z - c.z, p.x - c.x);
+            sh.timer = rand(10, 20);
+          }
+        }
+      }
+      // stay in the water and near the diver
+      const floor = seabedHeight(p.x, p.z) + 3;
+      p.y = Math.max(floor, Math.min(-3, p.y));
+      if (Math.hypot(p.x - c.x, p.z - c.z) > 220) placeShark(sh, false);
+      // face where it swims, tail beating harder when fast
+      const sp = sh.vel.length();
+      if (sp > 0.5) {
+        const flat = Math.hypot(sh.vel.x, sh.vel.z);
+        sh.mesh.rotation.set(0, Math.atan2(-sh.vel.z, sh.vel.x), Math.atan2(sh.vel.y, flat) * 0.6);
+      }
+      ZMModels.swimFish(sh.mesh, state.time, Math.min(2, sp / 14));
+      const mat = sh.mesh.userData.mainMaterial;
+      sh.flash = Math.max(0, sh.flash - dt);
+      mat.emissive.setRGB(1, 0.3, 0.3);
+      mat.emissiveIntensity = sh.flash > 0 ? 0.8 : 0;
+    });
+  }
+
+  // ---------------- The Kraken of Atlantis ----------------
+  const kraken = ZMModels.buildKraken();
+  kraken.visible = false;
+  mainScene.add(kraken);
+  const KRAKEN_HOVER = ATLANTIS.depth + 28;
+  const KRAKEN_HIDDEN = ATLANTIS.depth - 60;
+  const kr = { mode: "sleep", hp: KRAKEN.health, attackTimer: 3, flash: 0, sink: 0 };
+  kraken.position.set(ATLANTIS.x, KRAKEN_HIDDEN, ATLANTIS.z);
+  const krLocal = new THREE.Vector3();
+  const krPts = Array.from({ length: 13 }, () => new THREE.Vector3());
+  const krA = new THREE.Vector3(), krB = new THREE.Vector3(), krUp = new THREE.Vector3(0, 1, 0);
+  const bossBarEl = document.getElementById("boss-bar");
+  const bossFillEl = document.getElementById("boss-fill");
+
+  function inAtlantis(pos) {
+    return Math.hypot(pos.x - ATLANTIS.x, pos.z - ATLANTIS.z) < ATLANTIS.radius && pos.y < ATLANTIS.depth + 110;
+  }
+
+  function hurtKraken(tentacle) {
+    if (kr.mode !== "fight") return;
+    kr.hp -= harpoonStat("damage");
+    kr.flash = 0.25;
+    if (tentacle) {
+      tentacle.lunge = null;
+      tentacle.recoil = 1;
+    }
+    if (kr.hp <= 0) {
+      kr.mode = "defeated";
+      kr.sink = 0;
+      state.krakenDefeated = true;
+      state.coins += KRAKEN.reward;
+      refreshCounters();
+      saveGame();
+      openDiscovery({ name: `🦑 ¡Venciste al Kraken! +${KRAKEN.reward} 🪙`, fact: KRAKEN.fact, color: "#8a2a3a" });
+    }
+  }
+
+  // Spear against the mantle (big sphere) or any tentacle segment.
+  function spearHitsKraken(tip) {
+    if (kr.mode !== "fight" || !kraken.visible) return false;
+    krA.set(0, 18, 0);
+    kraken.localToWorld(krA);
+    if (tip.distanceTo(krA) < 17) {
+      hurtKraken(null);
+      return true;
+    }
+    for (const t of kraken.userData.tentacles) {
+      for (const seg of t.segs) {
+        seg.getWorldPosition(krB);
+        if (tip.distanceTo(krB) < 4) {
+          hurtKraken(t);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Poses one tentacle as a chain of segments: a lazy wave, blended toward the
+  // diver while it lunges and curled in after a harpoon hit.
+  function poseTentacle(t, k, time, diverLocal) {
+    const segs = t.segs, n = segs.length, L = kraken.userData.segLen * (1 - 0.45 * (t.recoil || 0));
+    const side = krA.set(-t.dir.z, 0, t.dir.x);
+    krPts[0].copy(t.base);
+    for (let i = 0; i < n; i++) {
+      const w = Math.sin(time * 1.4 + k * 0.9 + i * 0.45) * 0.45;
+      krB.copy(t.dir).addScaledVector(side, w);
+      krB.y += -0.035 * i + Math.cos(time + k + i * 0.3) * 0.2;
+      krB.normalize();
+      krPts[i + 1].copy(krPts[i]).addScaledVector(krB, L);
+    }
+    if (t.lunge) {
+      const f = Math.sin(Math.PI * Math.min(1, t.lunge.t / t.lunge.dur));
+      const reach = krB.copy(diverLocal).sub(t.base);
+      const len = Math.min(reach.length(), L * n * 1.05);
+      reach.setLength(len);
+      for (let i = 1; i <= n; i++) {
+        const u = i / n;
+        krPts[i].lerp(krA.copy(t.base).addScaledVector(reach, u), f * Math.sqrt(u));
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const s = segs[i];
+      krB.copy(krPts[i + 1]).sub(krPts[i]);
+      const len = krB.length();
+      s.position.copy(krPts[i]);
+      s.quaternion.setFromUnitVectors(krUp, krB.divideScalar(len || 1));
+      s.scale.set(1, len, 1);
+    }
+  }
+
+  function updateKraken(dt) {
+    const diving = state.mode === "dive";
+    const c = camera.position;
+    const near = diving && Math.hypot(c.x - ATLANTIS.x, c.z - ATLANTIS.z) < 700;
+    kraken.visible = near && kr.mode !== "sleep";
+    bossBarEl.classList.toggle("hidden", !(diving && (kr.mode === "rise" || kr.mode === "fight")));
+    bossFillEl.style.width = Math.max(0, (kr.hp / KRAKEN.health) * 100) + "%";
+
+    if (kr.mode === "sleep") {
+      if (diving && !state.krakenDefeated && inAtlantis(c)) {
+        kr.mode = "rise";
+        kraken.position.set(ATLANTIS.x, KRAKEN_HIDDEN, ATLANTIS.z);
+        showBanner("🦑 ¡El Kraken despierta! Usa el arpón (clic / E)");
+      }
+      return;
+    }
+    if (!diving || (kr.mode !== "defeated" && !inAtlantis(c) && Math.hypot(c.x - ATLANTIS.x, c.z - ATLANTIS.z) > ATLANTIS.radius * 1.5)) {
+      // the diver left: the Kraken sinks back into the trench (keeping its wounds)
+      if (kr.mode !== "defeated") kr.mode = "sleep";
+      kraken.visible = false;
+      return;
+    }
+
+    const time = state.time;
+    if (kr.mode === "rise") {
+      kraken.position.y += 22 * dt;
+      if (kraken.position.y >= KRAKEN_HOVER) {
+        kraken.position.y = KRAKEN_HOVER;
+        kr.mode = "fight";
+        kr.attackTimer = 1.5;
+      }
+    } else if (kr.mode === "fight") {
+      // drift toward the diver, staying over the ruins; face them
+      const dx = c.x - kraken.position.x, dz = c.z - kraken.position.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 45) {
+        kraken.position.x += (dx / d) * 7 * dt;
+        kraken.position.z += (dz / d) * 7 * dt;
+      }
+      const ox = kraken.position.x - ATLANTIS.x, oz = kraken.position.z - ATLANTIS.z, od = Math.hypot(ox, oz);
+      if (od > 80) {
+        kraken.position.x = ATLANTIS.x + (ox / od) * 80;
+        kraken.position.z = ATLANTIS.z + (oz / od) * 80;
+      }
+      const wantY = THREE.MathUtils.clamp(c.y - 12, ATLANTIS.depth + 12, ATLANTIS.depth + 70);
+      kraken.position.y += (wantY - kraken.position.y) * Math.min(1, dt * 0.4) + Math.sin(time * 0.8) * 2 * dt;
+      const want = Math.atan2(dx, dz);
+      const diff = ((want - kraken.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      kraken.rotation.y += diff * Math.min(1, dt * 0.8);
+
+      // lunge with the tentacle closest to the diver
+      kr.attackTimer -= dt;
+      krLocal.copy(c);
+      kraken.worldToLocal(krLocal);
+      if (kr.attackTimer <= 0) {
+        let best = null, bd = Infinity;
+        kraken.userData.tentacles.forEach((t) => {
+          if (t.lunge || (t.recoil || 0) > 0.2) return;
+          const dd = t.base.distanceTo(krLocal);
+          if (dd < bd) {
+            bd = dd;
+            best = t;
+          }
+        });
+        if (best && bd < kraken.userData.segLen * best.segs.length * 1.15) {
+          best.lunge = { t: 0, dur: 1.6 };
+          kr.attackTimer = rand(1.8, 3.2);
+        } else kr.attackTimer = 0.8;
+      }
+    } else if (kr.mode === "defeated") {
+      kr.sink += dt;
+      kraken.position.y -= 14 * dt;
+      kraken.rotation.y += dt * 0.5;
+      if (kr.sink > 6) {
+        kraken.visible = false;
+        kr.mode = "gone";
+      }
+    }
+    if (kr.mode === "gone") return;
+
+    krLocal.copy(c);
+    kraken.worldToLocal(krLocal);
+    kraken.userData.tentacles.forEach((t, k) => {
+      t.recoil = Math.max(0, (t.recoil || 0) - dt * 0.7);
+      if (t.lunge) {
+        t.lunge.t += dt;
+        const f = t.lunge.t / t.lunge.dur;
+        if (f > 0.4 && f < 0.65 && kr.mode === "fight") {
+          t.segs[t.segs.length - 1].getWorldPosition(krB);
+          if (krB.distanceTo(c) < 8) {
+            hurtDiver(KRAKEN.grab, "🦑 ¡Un tentáculo te atrapó! Pierdes aire");
+            // flung away from the monster
+            krA.copy(c).sub(kraken.position).setY(0).setLength(22);
+            c.add(krA);
+          }
+        }
+        if (f >= 1) t.lunge = null;
+      }
+      poseTentacle(t, k, time, krLocal);
+    });
+    kr.flash = Math.max(0, kr.flash - dt);
+    const skin = kraken.userData.skin;
+    skin.emissive.setRGB(kr.flash > 0 ? 1 : 0.16, kr.flash > 0 ? 1 : 0.02, kr.flash > 0 ? 1 : 0.03);
+    kraken.userData.eyeMat.emissiveIntensity = 1 + Math.sin(time * 3) * 0.4;
+  }
+
+  function updateUnderwaterFoes(dt) {
+    state.diverInvuln = Math.max(0, state.diverInvuln - dt);
+    updateHarpoon(dt);
+    updateSharks(dt);
+    updateKraken(dt);
   }
 
   // ---------------- Regions ----------------
@@ -3928,6 +4371,22 @@
         radarCtx.arc(px, py, 3 + Math.sin(state.time * 6) * 0.8, 0, Math.PI * 2);
         radarCtx.fill();
       });
+      // danger: sharks and the Kraken
+      sharks.forEach((sh) => {
+        if (!sh.mesh.visible) return;
+        const [px, py] = toRadar(sh.mesh.position.x, sh.mesh.position.z);
+        radarCtx.fillStyle = sh.mode === "attack" ? "#ff4040" : "#ff9a8a";
+        radarCtx.beginPath();
+        radarCtx.arc(px, py, sh.mode === "attack" ? 4 : 3, 0, Math.PI * 2);
+        radarCtx.fill();
+      });
+      if (kraken.visible && kr.mode === "fight") {
+        const [px, py] = toRadar(kraken.position.x, kraken.position.z);
+        radarCtx.fillStyle = "#ff3b5c";
+        radarCtx.beginPath();
+        radarCtx.arc(px, py, 7 + Math.sin(state.time * 4) * 1.5, 0, Math.PI * 2);
+        radarCtx.fill();
+      }
       zones.forEach((z) => {
         const [px, py] = toRadar(z.entranceWorld.x, z.entranceWorld.z);
         radarCtx.strokeStyle = "#8fd8ff";
@@ -4121,6 +4580,7 @@
         else if (state.mode === "dive") updateDiveLogic(dt);
         else if (state.mode === "cave") updateCaveLogic(dt);
         updateOxygen(dt);
+        updateUnderwaterFoes(dt);
         updateCannonballs(dt);
       }
       updateHealthUI();

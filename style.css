@@ -277,6 +277,37 @@ html, body {
 }
 #hit-flash.show { opacity: 1; transition: none; }
 
+#boss-bar {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(360px, calc(100vw - 220px));
+  z-index: 6;
+  pointer-events: none;
+  text-align: center;
+}
+#boss-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffd0d6;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+  margin-bottom: 4px;
+}
+#boss-track {
+  height: 10px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,120,140,0.5);
+  overflow: hidden;
+}
+#boss-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #b3203a, #ff6b81);
+  transition: width 0.2s ease-out;
+}
+
 #radar {
   position: fixed;
   top: 46px;

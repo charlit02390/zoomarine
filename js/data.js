@@ -231,10 +231,24 @@ const UPGRADES = {
   dive: { name: "Equipo de buceo", levels: ["Equipo básico (130 m)", "Equipo profesional (200 m)", "Traje abisal (300 m)"], cost: [0, 150, 350],
     depth: [130, 200, 300], oxygen: [100, 150, 220],
     desc: "Bajas más profundo y aguantas más tiempo sin aire." },
+  harpoon: { name: "Arpón", levels: ["Arpón de goma", "Arpón de acero", "Arpón neumático"], cost: [0, 110, 260],
+    damage: [1, 2, 3], reload: [1.1, 0.75, 0.45], speed: [70, 95, 125], range: [60, 80, 105],
+    desc: "Más daño, recarga más rápida y más alcance bajo el agua." },
   engine: { name: "Motor", levels: ["Motor de serie", "Motor turbo", "Motor de regata"], cost: [0, 120, 260], speed: [1, 1.12, 1.25],
     desc: "El barco navega más rápido." },
 };
 const REPAIR_COST = 25;
+
+// ---------------- Peligros del mar ----------------
+// Tiburones que rondan al buzo: a veces atacan y una mordida le roba aire.
+// Con el arpón se les espanta. Colores por mar (índice de SEAS o "limon").
+const SHARKS = {
+  count: 3, health: 3, bite: 18, color: "#6f7c88",
+  colors: { limon: "#7a8a8f", 0: "#8f9aa3", 2: "#8a7f6a", 4: "#6d8a96", 5: "#5f6f7c", 6: "#4f5a66" },
+};
+// El Kraken guarda la Atlántida: aparece al entrar a las ruinas.
+const KRAKEN = { health: 14, reward: 250, grab: 22,
+  fact: "Las leyendas nórdicas hablan de un monstruo tan grande que los marineros lo confundían con una isla. Probablemente nació de avistamientos del calamar gigante." };
 
 // ---------------- Habla tica ----------------
 // Saludos y charlas de la gente de Puerto Limón: español costarricense

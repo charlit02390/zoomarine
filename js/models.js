@@ -644,6 +644,142 @@ const ZMModels = (function () {
     w.userData.tail.rotation.z = Math.sin(t * (1.2 + r * 0.9) + w.userData.phase) * (0.18 + r * 0.12);
   }
 
+  // ---------------- Sharks ----------------
+  // Nose toward +x, about 2 units long before `scale`. userData.tail wiggles
+  // side to side like a fish (swimFish works on it).
+  function buildShark(color, scale) {
+    const g = new THREE.Group();
+    const skin = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), vertexColors: true, roughness: 0.5, metalness: 0.1 });
+    const finMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(0.85), roughness: 0.55, side: THREE.DoubleSide });
+    const body = new THREE.Mesh(getFishBodyGeo(), skin);
+    body.scale.set(1.25, 0.75, 0.8);
+    g.add(body);
+    const tail = new THREE.Group();
+    tail.position.x = -1.15;
+    tail.add(new THREE.Mesh(triShape([[0.1, 0], [-0.45, 0.62], [-0.3, 0.05], [-0.3, -0.05], [-0.3, -0.35]]), finMat));
+    g.add(tail);
+    const dorsal = new THREE.Mesh(triShape([[0.25, 0], [-0.3, 0], [-0.2, 0.55]]), finMat);
+    dorsal.position.set(0.05, 0.26, 0);
+    g.add(dorsal);
+    const pecGeo = flatShape([[0.12, 0], [-0.12, 0], [-0.3, 0.5]]);
+    [-1, 1].forEach((s) => {
+      const pec = new THREE.Mesh(pecGeo, finMat);
+      pec.position.set(0.3, -0.16, s * 0.18);
+      pec.scale.z = -s;
+      pec.rotation.x = s * 0.5;
+      g.add(pec);
+      const e = new THREE.Mesh(eyeGeo, eyeMat);
+      e.position.set(0.95, 0.07, s * 0.17);
+      g.add(e);
+    });
+    g.scale.setScalar(scale || 1);
+    g.userData.tail = tail;
+    g.userData.mainMaterial = skin;
+    g.userData.phase = Math.random() * 10;
+    return g;
+  }
+
+  // ---------------- Harpoon ----------------
+  // Spear along -z (the way the camera looks), tip at the front.
+  function buildHarpoonSpear() {
+    const g = new THREE.Group();
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3, 6).rotateX(Math.PI / 2), std(0xc9ced6, { metalness: 0.7, roughness: 0.3 }));
+    g.add(shaft);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.6, 6).rotateX(-Math.PI / 2), std(0xeef2f6, { metalness: 0.8, roughness: 0.2 }));
+    tip.position.z = -1.75;
+    g.add(tip);
+    const barbs = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.35, 4).rotateX(Math.PI / 2), std(0x9aa3ad, { metalness: 0.7, roughness: 0.3 }));
+    barbs.position.z = -1.35;
+    g.add(barbs);
+    return g;
+  }
+
+  // Speargun held in front of the camera; userData.spear shows while loaded.
+  function buildHarpoonGun() {
+    const g = new THREE.Group();
+    const dark = std(0x2a2f36, { roughness: 0.5, metalness: 0.4 });
+    const wood = std(0x8a5a2a, { roughness: 0.7 });
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.3, 8).rotateX(Math.PI / 2), dark);
+    barrel.position.z = -0.35;
+    g.add(barrel);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.28, 0.12), wood);
+    grip.position.set(0, -0.14, 0.12);
+    grip.rotation.x = -0.3;
+    g.add(grip);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.35), wood);
+    stock.position.set(0, -0.02, 0.35);
+    g.add(stock);
+    const bands = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.018, 6, 12), std(0x3a8f4a, { roughness: 0.6 }));
+    bands.position.z = -0.9;
+    g.add(bands);
+    const spear = buildHarpoonSpear();
+    spear.scale.setScalar(0.45);
+    spear.position.set(0, 0.07, -0.55);
+    g.add(spear);
+    g.userData.spear = spear;
+    return g;
+  }
+
+  // ---------------- Kraken ----------------
+  // Giant squid-like monster: a mantle pointing up, two glowing eyes and eight
+  // tentacles made of segments the game poses every frame. userData:
+  // mantle, eyeMat, tentacles [{ base (local), dir (local, unit), segs[] }].
+  function buildKraken() {
+    const g = new THREE.Group();
+    const skin = new THREE.MeshStandardMaterial({ color: 0x8a2a3a, roughness: 0.45, metalness: 0.1, emissive: 0x2a0508, emissiveIntensity: 0.4 });
+    const pts = [];
+    for (let i = 0; i <= 14; i++) {
+      const t = i / 14; // 0 = head (bottom) .. 1 = mantle tip (top)
+      const r = 14 * Math.sin(Math.PI * Math.min(1, 0.2 + t * 0.85)) * (1 - t * 0.35) + 0.5;
+      pts.push(new THREE.Vector2(i === 14 ? 0.5 : r, t * 42));
+    }
+    const mantle = new THREE.Mesh(new THREE.LatheGeometry(pts, 20), skin);
+    g.add(mantle);
+    // side fins at the top of the mantle
+    const finGeoK = triShape([[0, 0], [16, 6], [0, 14]]);
+    [-1, 1].forEach((s) => {
+      const f = new THREE.Mesh(finGeoK, new THREE.MeshStandardMaterial({ color: 0x6a1f2c, roughness: 0.5, side: THREE.DoubleSide }));
+      f.position.set(0, 28, 0);
+      f.scale.x = s;
+      g.add(f);
+    });
+    const eyeMatK = new THREE.MeshStandardMaterial({ color: 0xffe36b, emissive: 0xffb300, emissiveIntensity: 1.2, roughness: 0.2 });
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
+    [-1, 1].forEach((s) => {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(3.4, 14, 12), eyeMatK);
+      eye.position.set(s * 10.5, 7, 6);
+      g.add(eye);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(1.6, 10, 8), pupilMat);
+      pupil.scale.set(0.5, 1.2, 0.5);
+      pupil.position.set(s * 11.6, 7, 8.4);
+      g.add(pupil);
+    });
+    // tentacles: tapered segments, bases in a ring under the head
+    const segGeos = [];
+    const SEGS = 12;
+    for (let i = 0; i < SEGS; i++) {
+      const r0 = 2.6 * (1 - i / SEGS) + 0.35, r1 = 2.6 * (1 - (i + 1) / SEGS) + 0.35;
+      const geo = new THREE.CylinderGeometry(r1, r0, 1, 8);
+      geo.translate(0, 0.5, 0); // pivot at the segment's base
+      segGeos.push(geo);
+    }
+    const suckerMat = new THREE.MeshStandardMaterial({ color: 0xe8a0a8, roughness: 0.6 });
+    const tentacles = [];
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
+      const base = new THREE.Vector3(Math.cos(a) * 8, 1, Math.sin(a) * 8);
+      const dir = new THREE.Vector3(Math.cos(a), -0.2, Math.sin(a)).normalize();
+      const segs = segGeos.map((geo, i) => {
+        const m = new THREE.Mesh(geo, i === SEGS - 1 ? suckerMat : skin);
+        g.add(m);
+        return m;
+      });
+      tentacles.push({ base, dir, angle: a, segs });
+    }
+    g.userData = { mantle, skin, eyeMat: eyeMatK, tentacles, segLen: 5.2 };
+    return g;
+  }
+
   // ---------------- People ----------------
   // Jointed figure (hips/knees, shoulders/elbows) facing -z, ~2.6 units tall.
   // Options: skin, shirt, bottom ('shorts'|'pants'|'skirt'), bottomColor,
@@ -1634,6 +1770,10 @@ const ZMModels = (function () {
     swimFish,
     buildWhale,
     swimWhale,
+    buildShark,
+    buildHarpoonSpear,
+    buildHarpoonGun,
+    buildKraken,
     buildPerson,
     animatePerson,
     buildHouse,
