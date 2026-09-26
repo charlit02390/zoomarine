@@ -183,6 +183,23 @@ const FISH = [
     fact: "Su sangre es transparente: no tiene glóbulos rojos y sobrevive en el agua helada gracias a proteínas anticongelantes." },
 ];
 
+// Ballenas que nadan en manadas por los mares. Salen a respirar (con su
+// soplido), a veces saltan fuera del agua y se avistan desde el barco.
+// seas: índices de SEAS o "limon"; shape: silueta del modelo; length: largo en
+// unidades del mundo; pod: cuántas nadan juntas; calf: si una es una cría.
+const WHALES = [
+  { id: "jorobada", name: "Ballena Jorobada", color: "#3d4a57", shape: "jorobada", length: 26, pod: 2, calf: true, seas: ["limon", 4],
+    fact: "Cada año viajan miles de kilómetros hasta las aguas cálidas de Costa Rica para tener a sus crías. Los machos cantan canciones que duran horas." },
+  { id: "azul", name: "Ballena Azul", color: "#5b7a99", shape: "azul", length: 40, pod: 1, seas: [3, 5],
+    fact: "Es el animal más grande que ha existido en la Tierra: mide hasta 30 metros, más que tres buses en fila, y su soplido sube 9 metros." },
+  { id: "cachalote", name: "Cachalote", color: "#4a4440", shape: "cachalote", length: 30, pod: 2, seas: [1, 2],
+    fact: "Tiene el cerebro más grande del reino animal y baja a más de 2000 metros de profundidad a cazar calamares gigantes." },
+  { id: "beluga", name: "Beluga", color: "#eef3f5", shape: "beluga", length: 13, pod: 3, seas: [0],
+    fact: "La llaman el 'canario del mar' por sus silbidos y chasquidos. Puede mover el cuello y cambiar la forma de su frente." },
+  { id: "franca_austral", name: "Ballena Franca Austral", color: "#2a2a30", shape: "franca", length: 28, pod: 2, seas: [6],
+    fact: "Tiene callosidades blancas en la cabeza, distintas en cada ballena: los científicos las usan como huellas digitales. Su soplido tiene forma de V." },
+];
+
 // Misiones de Doña Marisol en Puerto Limón, en orden.
 const MISSIONS = [
   { id: "m_sabalo", title: "El rey del Caribe", fishId: "sabalo_real", count: 1, reward: 60, where: "cerca de Puerto Limón",
@@ -214,10 +231,24 @@ const UPGRADES = {
   dive: { name: "Equipo de buceo", levels: ["Equipo básico (130 m)", "Equipo profesional (200 m)", "Traje abisal (300 m)"], cost: [0, 150, 350],
     depth: [130, 200, 300], oxygen: [100, 150, 220],
     desc: "Bajas más profundo y aguantas más tiempo sin aire." },
+  harpoon: { name: "Arpón", levels: ["Arpón de goma", "Arpón de acero", "Arpón neumático"], cost: [0, 110, 260],
+    damage: [1, 2, 3], reload: [1.1, 0.75, 0.45], speed: [70, 95, 125], range: [60, 80, 105],
+    desc: "Más daño, recarga más rápida y más alcance bajo el agua." },
   engine: { name: "Motor", levels: ["Motor de serie", "Motor turbo", "Motor de regata"], cost: [0, 120, 260], speed: [1, 1.12, 1.25],
     desc: "El barco navega más rápido." },
 };
 const REPAIR_COST = 25;
+
+// ---------------- Peligros del mar ----------------
+// Tiburones que rondan al buzo: a veces atacan y una mordida le roba aire.
+// Con el arpón se les espanta. Colores por mar (índice de SEAS o "limon").
+const SHARKS = {
+  count: 3, health: 3, bite: 18, color: "#6f7c88",
+  colors: { limon: "#7a8a8f", 0: "#8f9aa3", 2: "#8a7f6a", 4: "#6d8a96", 5: "#5f6f7c", 6: "#4f5a66" },
+};
+// El Kraken guarda la Atlántida: aparece al entrar a las ruinas.
+const KRAKEN = { health: 14, reward: 250, grab: 22,
+  fact: "Las leyendas nórdicas hablan de un monstruo tan grande que los marineros lo confundían con una isla. Probablemente nació de avistamientos del calamar gigante." };
 
 // ---------------- Habla tica ----------------
 // Saludos y charlas de la gente de Puerto Limón: español costarricense
