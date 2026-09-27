@@ -140,12 +140,20 @@
       fog: false,
       vertexShader: `varying vec3 vDir;
         void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      // Atmosphere: deep blue zenith, pale hazy horizon, a warm glow around
+      // the sun and a crisp sun disc. At the horizon it matches the fog colour.
       fragmentShader: `uniform vec3 uSunDir; uniform vec3 uTop; uniform vec3 uHorizon; varying vec3 vDir;
         void main() {
           vec3 d = normalize(vDir);
-          vec3 col = mix(uHorizon, uTop, pow(max(d.y, 0.0), 0.5));
+          float y = max(d.y, 0.0);
+          vec3 zenith = uTop * 0.9;
+          vec3 col = mix(uHorizon, uTop, smoothstep(0.0, 0.5, pow(y, 0.7)));
+          col = mix(col, zenith, smoothstep(0.35, 1.0, y));
           float s = max(dot(d, uSunDir), 0.0);
-          col += vec3(1.0, 0.9, 0.7) * (pow(s, 10.0) * 0.3 + pow(s, 800.0) * 1.5);
+          // the sky brightens and warms toward the sun, most near the horizon
+          col += vec3(1.0, 0.86, 0.62) * pow(s, 5.0) * 0.16 * (1.0 - y * 0.6);
+          col += vec3(1.0, 0.93, 0.78) * pow(s, 64.0) * 0.45;
+          col += vec3(1.0, 0.97, 0.9) * smoothstep(0.99935, 0.99965, s) * 1.6;
           gl_FragColor = vec4(col, 1.0);
         }`,
     })
@@ -154,23 +162,48 @@
   sky.renderOrder = -1;
   mainScene.add(sky);
 
-  // Drifting clouds: clumps of flattened spheres high above the map.
-  const clouds = new THREE.Group();
-  const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x8a9aa8, fog: false });
-  const cloudGeo = new THREE.SphereGeometry(1, 10, 8);
-  for (let i = 0; i < 16; i++) {
-    const c = new THREE.Group();
-    const puffs = 4 + Math.floor(hash(i, 3) * 4);
-    for (let k = 0; k < puffs; k++) {
-      const m = new THREE.Mesh(cloudGeo, cloudMat);
-      const sz = 40 + hash(i, k + 10) * 50;
-      m.scale.set(sz * 1.6, sz * 0.55, sz);
-      m.position.set((k - puffs / 2) * 45 + hash(i, k) * 30, hash(i, k + 20) * 15, hash(i, k + 30) * 40);
-      c.add(m);
+  // Drifting clouds: soft billboards painted on canvases (lit tops, greyer
+  // flat bases), a few variants reused across the sky.
+  function cloudTexture(seed) {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 128;
+    const ctx = c.getContext("2d");
+    const puff = (x, y, r, light) => {
+      const g = ctx.createRadialGradient(x, y - r * 0.25, r * 0.1, x, y, r);
+      g.addColorStop(0, `rgba(${light},${light},${Math.min(255, light + 6)},0.95)`);
+      g.addColorStop(0.55, `rgba(${light - 12},${light - 8},${light},0.6)`);
+      g.addColorStop(1, "rgba(200,210,225,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    // grey base first, then brighter billows on top
+    for (let i = 0; i < 14; i++) puff(30 + hash(seed, i) * 196, 84 + hash(seed, i + 40) * 10, 16 + hash(seed, i + 20) * 14, 214);
+    for (let i = 0; i < 18; i++) {
+      const x = 40 + hash(seed, i + 60) * 176;
+      const hump = Math.sin(((x - 40) / 176) * Math.PI); // taller in the middle
+      puff(x, 76 - hump * 30 - hash(seed, i + 80) * 12, 14 + hump * 16 + hash(seed, i + 100) * 10, 250);
     }
-    const a = hash(i, 1) * Math.PI * 2, d = 900 + hash(i, 2) * 1700;
-    c.position.set(Math.cos(a) * d, 320 + hash(i, 4) * 180, Math.sin(a) * d);
-    c.rotation.y = hash(i, 5) * Math.PI;
+    // flatten the underside
+    ctx.globalCompositeOperation = "destination-out";
+    const fade = ctx.createLinearGradient(0, 88, 0, 112);
+    fade.addColorStop(0, "rgba(0,0,0,0)");
+    fade.addColorStop(1, "rgba(0,0,0,1)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, 88, 256, 40);
+    const tex = new THREE.CanvasTexture(c);
+    return tex;
+  }
+  const cloudMats = [1, 2, 3, 4].map((k) => new THREE.SpriteMaterial({ map: cloudTexture(k * 7.3), transparent: true, depthWrite: false, fog: false }));
+  const clouds = new THREE.Group();
+  for (let i = 0; i < 26; i++) {
+    const c = new THREE.Sprite(cloudMats[i % cloudMats.length]);
+    const w = 380 + hash(i, 3) * 520;
+    c.scale.set(w, w * 0.5, 1);
+    const a = hash(i, 1) * Math.PI * 2, d = 1000 + hash(i, 2) * 2400;
+    c.position.set(Math.cos(a) * d, 300 + hash(i, 4) * 260, Math.sin(a) * d);
     clouds.add(c);
   }
   mainScene.add(clouds);
@@ -193,9 +226,9 @@
   const oceanGeo = new THREE.PlaneGeometry(OCEAN_SIZE, OCEAN_SIZE, OCEAN_SEGMENTS, OCEAN_SEGMENTS);
   oceanGeo.rotateX(-Math.PI / 2);
   const oceanMat = new THREE.MeshPhongMaterial({
-    color: 0x1a6c9c,
-    specular: 0x8aa4b8,
-    shininess: 90,
+    color: 0x16628f,
+    specular: 0x9fb8cc,
+    shininess: 160,
     transparent: true,
     opacity: 0.92,
     side: THREE.DoubleSide,
@@ -206,6 +239,9 @@
     uIslands: { value: Array.from({ length: MAX_ISLANDS }, () => new THREE.Vector4()) },
     uIslandWob: { value: new Array(MAX_ISLANDS).fill(0) },
     uSkyColor: { value: new THREE.Color(0x9fd4f0) },
+    uSunDir: { value: SUN_DIR },
+    uSkyTop: { value: new THREE.Color(0x2f7fd0) },
+    uSkyHorizon: { value: daySky.clone() },
   };
   const WAVE_GLSL = `
     uniform float uTime;
@@ -222,6 +258,9 @@
     shader.uniforms.uIslands = oceanUniforms.uIslands;
     shader.uniforms.uIslandWob = oceanUniforms.uIslandWob;
     shader.uniforms.uSkyColor = oceanUniforms.uSkyColor;
+    shader.uniforms.uSunDir = oceanUniforms.uSunDir;
+    shader.uniforms.uSkyTop = oceanUniforms.uSkyTop;
+    shader.uniforms.uSkyHorizon = oceanUniforms.uSkyHorizon;
     shader.vertexShader = WAVE_GLSL + shader.vertexShader
       .replace(
         "#include <beginnormal_vertex>",
@@ -245,6 +284,9 @@
       `uniform vec4 uIslands[${MAX_ISLANDS}];
        uniform float uIslandWob[${MAX_ISLANDS}];
        uniform vec3 uSkyColor;
+       uniform vec3 uSunDir;
+       uniform vec3 uSkyTop;
+       uniform vec3 uSkyHorizon;
        float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
        float vnoise(vec2 p) {
          vec2 i = floor(p), f = fract(p);
@@ -252,8 +294,27 @@
          return mix(mix(hash2(i), hash2(i + vec2(1.0, 0.0)), u.x),
                     mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), u.x), u.y);
        }
+       // wind ripples on top of the swell: slope of two drifting noise layers
+       vec2 noiseSlope(vec2 q) {
+         const float e = 0.3;
+         return vec2(vnoise(q + vec2(e, 0.0)) - vnoise(q - vec2(e, 0.0)),
+                     vnoise(q + vec2(0.0, e)) - vnoise(q - vec2(0.0, e))) / (2.0 * e);
+       }
+       vec2 rippleGrad(vec2 p, float t) {
+         return noiseSlope(p * 0.16 + vec2(t * 0.32, t * 0.21)) * 0.16 * 1.3
+              + noiseSlope(p * 0.43 + vec2(-t * 0.47, t * 0.38)) * 0.43 * 0.45;
+       }
       ` +
       shader.fragmentShader.replace(
+        "#include <normal_fragment_maps>",
+        `#include <normal_fragment_maps>
+         float viewDist = length(vViewPosition);
+         float rippleK = (1.0 - smoothstep(30.0, 300.0, viewDist)) * (gl_FrontFacing ? 1.0 : 0.0);
+         if (rippleK > 0.0) {
+           vec2 rg = rippleGrad(vWorldXZ, uTime);
+           normal = normalize(normal + (viewMatrix * vec4(-rg.x, 0.0, -rg.y, 0.0)).xyz * rippleK);
+         }`
+      ).replace(
         "#include <color_fragment>",
         `#include <color_fragment>
          float h = waveH(vWorldXZ, uTime);
@@ -284,9 +345,29 @@
       ).replace(
         "#include <envmap_fragment>",
         `#include <envmap_fragment>
-         // sky reflection at grazing angles (fresnel)
-         float fres = pow(1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0), 4.0);
-         outgoingLight = mix(outgoingLight, uSkyColor, fres * 0.6 * (1.0 - foam));`
+         vec3 viewDirV = normalize(vViewPosition);
+         // world-space view and reflection directions (the view matrix is a rotation)
+         vec3 reflW = (vec4(reflect(-viewDirV, normal), 0.0) * viewMatrix).xyz;
+         vec3 viewW = (vec4(viewDirV, 0.0) * viewMatrix).xyz;
+         if (gl_FrontFacing) {
+           // reflect the actual sky gradient at grazing angles (fresnel)
+           float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(normal, viewDirV), 0.0, 1.0), 5.0);
+           vec3 skyRefl = mix(uSkyHorizon, uSkyTop, smoothstep(0.0, 0.6, max(reflW.y, 0.0)));
+           outgoingLight = mix(outgoingLight, skyRefl, clamp(fres * 0.85, 0.0, 0.85) * (1.0 - foam));
+           // light scattering through the thin wave crests: a turquoise glow toward the sun
+           float toSun = pow(max(dot(-viewW, normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0), 2.0);
+           outgoingLight += vec3(0.05, 0.32, 0.3) * smoothstep(0.2, 2.2, h) * (0.35 + 0.65 * toSun) * (1.0 - foam);
+           // sun glitter: tiny sharp highlights on the ripples
+           float glint = pow(max(dot(normalize(reflW), uSunDir), 0.0), 900.0);
+           outgoingLight += vec3(1.0, 0.95, 0.82) * glint * 6.0 * rippleK * (1.0 - foam);
+         } else {
+           // seen from below: Snell's window (the bright sky straight up), mirror-dark beyond
+           float up = clamp(-viewW.y, 0.0, 1.0);
+           float window = smoothstep(0.55, 0.8, up);
+           float shimmer = 0.5 + 0.5 * sin(vWorldXZ.x * 0.35 + uTime * 2.0) * sin(vWorldXZ.y * 0.31 - uTime * 1.7);
+           outgoingLight = mix(vec3(0.07, 0.3, 0.38), vec3(0.72, 0.9, 0.97), window) + vec3(0.12, 0.16, 0.16) * shimmer * window;
+           diffuseColor.a = 1.0;
+         }`
       );
   };
   const ocean = new THREE.Mesh(oceanGeo, oceanMat);
@@ -602,13 +683,53 @@
     z.mouth.position.set(z.entranceWorld.x - z.buoy.x, z.entranceWorld.y, z.entranceWorld.z - z.buoy.z);
   });
 
+  // Caustics: the dancing net of sunlight that the waves focus on the sea
+  // floor. Injected into seabed materials; fades out with depth.
+  const causticUniforms = { uTime: { value: 0 }, uCaustic: { value: 0 } };
+  function withCaustics(mat) {
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = causticUniforms.uTime;
+      shader.uniforms.uCaustic = causticUniforms.uCaustic;
+      shader.vertexShader = "varying vec3 vCausticPos;\n" + shader.vertexShader.replace(
+        "#include <project_vertex>",
+        `#include <project_vertex>
+         vec4 cwp = vec4(transformed, 1.0);
+         #ifdef USE_INSTANCING
+           cwp = instanceMatrix * cwp;
+         #endif
+         vCausticPos = (modelMatrix * cwp).xyz;`
+      );
+      shader.fragmentShader =
+        `uniform float uTime;
+         uniform float uCaustic;
+         varying vec3 vCausticPos;
+         float causticLayer(vec2 p, float t) {
+           vec2 w = p + vec2(sin(p.y * 1.3 + t * 0.7), cos(p.x * 1.1 - t * 0.6)) * 0.55;
+           float v = sin(w.x * 2.2 + t * 0.9) + sin(w.y * 2.0 - t * 0.8) + sin((w.x + w.y) * 1.6 + t * 0.5);
+           return pow(clamp(1.0 - abs(v) * 0.7, 0.0, 1.0), 6.0);
+         }
+        ` +
+        shader.fragmentShader.replace(
+          "#include <tonemapping_fragment>",
+          `if (uCaustic > 0.0) {
+             vec2 cp = vCausticPos.xz * 0.19;
+             float c = causticLayer(cp, uTime) + causticLayer(cp * 1.7 + 4.3, uTime * 1.2) * 0.6;
+             float depthFade = exp(vCausticPos.y / 55.0); // strong in the shallows, gone in the deep
+             gl_FragColor.rgb += vec3(0.7, 0.92, 1.0) * c * depthFade * uCaustic * 0.42;
+           }
+           #include <tonemapping_fragment>`
+        );
+    };
+    return mat;
+  }
+
   // Seabed mesh: a grid that follows the diver and is rebuilt as they move.
   const SEABED_SIZE = 520;
   const SEABED_SEGS = 104;
   const seabedGeo = new THREE.PlaneGeometry(SEABED_SIZE, SEABED_SIZE, SEABED_SEGS, SEABED_SEGS);
   seabedGeo.rotateX(-Math.PI / 2);
   seabedGeo.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(seabedGeo.attributes.position.count * 3), 3));
-  const seabed = new THREE.Mesh(seabedGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
+  const seabed = new THREE.Mesh(seabedGeo, withCaustics(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })));
   seabed.frustumCulled = false;
   seabed.visible = false;
   mainScene.add(seabed);
@@ -616,8 +737,8 @@
 
   // Instanced seabed life scattered on a stable hash grid around the diver.
   const DECOR_CELL = 13;
-  const decorRocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: 0x5a5650, roughness: 1, flatShading: true }), 420);
-  const decorCoral = new THREE.InstancedMesh(new THREE.ConeGeometry(0.8, 3, 6), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }), 420);
+  const decorRocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), withCaustics(new THREE.MeshStandardMaterial({ color: 0x5a5650, roughness: 1, flatShading: true })), 420);
+  const decorCoral = new THREE.InstancedMesh(new THREE.ConeGeometry(0.8, 3, 6), withCaustics(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 })), 420);
   const decorKelp = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 1, 0.12), new THREE.MeshStandardMaterial({ color: 0x3f8a3a, roughness: 0.9, side: THREE.DoubleSide }), 420);
   [decorRocks, decorCoral, decorKelp].forEach((m) => {
     m.frustumCulled = false;
@@ -714,20 +835,17 @@
 
   // ---------------- Sunken treasure all over the map ----------------
   const seaChests = [];
-  const chestGlowColor = 0xffd76b;
   for (let i = 0, tries = 0; seaChests.length < 55 && tries < 400; tries++) {
     const a = hash(tries, 301) * Math.PI * 2, d = 250 + hash(tries, 302) * 2000;
     const x = Math.cos(a) * d, z = Math.sin(a) * d;
     const h = seabedHeight(x, z);
     if (h > -10 || Math.hypot(x - ATLANTIS.x, z - ATLANTIS.z) < ATLANTIS.radius) continue;
     if (seaChests.some((c) => Math.hypot(c.x - x, c.z - z) < 90)) continue;
+    // half buried in the sand, no beacon: the treasure detector leads the way
     const mesh = ZMModels.buildChest();
     mesh.scale.setScalar(1.6);
-    mesh.position.set(x, h - 0.2, z);
-    mesh.rotation.set(0, hash(tries, 303) * 6, (hash(tries, 304) - 0.5) * 0.3);
-    const glow = ZMModels.glowSprite(chestGlowColor, 7);
-    glow.position.y = 2;
-    mesh.add(glow);
+    mesh.position.set(x, h - 1.7, z);
+    mesh.rotation.set((hash(tries, 306) - 0.5) * 0.35, hash(tries, 303) * 6, (hash(tries, 304) - 0.5) * 0.4);
     mesh.visible = false;
     mainScene.add(mesh);
     seaChests.push({ index: seaChests.length, x, y: h, z, mesh, reward: Math.round(20 + -h * 0.45 + hash(tries, 305) * 30) });
@@ -755,10 +873,8 @@
     const chest = ZMModels.buildChest();
     chest.scale.setScalar(2.2);
     const cx = x + 12, cz = z + 4;
-    chest.position.set(cx, seabedHeight(cx, cz) - 0.2, cz);
-    const glow = ZMModels.glowSprite(chestGlowColor, 9);
-    glow.position.y = 2;
-    chest.add(glow);
+    chest.position.set(cx, seabedHeight(cx, cz) - 1.8, cz);
+    chest.rotation.set(0.2, a, 0.25);
     chest.visible = false;
     mainScene.add(chest);
     wrecks.push(ship);
@@ -802,7 +918,7 @@
     const diving = state.mode === "dive";
     const cam = camera.position;
     seaChests.forEach((c) => {
-      c.mesh.visible = diving && !state.seaChests.has(c.index) && Math.hypot(c.x - cam.x, c.z - cam.z) < 260;
+      c.mesh.visible = diving && !state.seaChests.has(c.index) && Math.hypot(c.x - cam.x, c.z - cam.z) < 90;
     });
     wrecks.forEach((w) => (w.visible = diving && Math.hypot(w.position.x - cam.x, w.position.z - cam.z) < 320));
     atlantis.visible = diving && Math.hypot(ATLANTIS.x - cam.x, ATLANTIS.z - cam.z) < 650;
@@ -1375,7 +1491,7 @@
   const HINTS = {
     boat: "WASD: navegar · Ratón: apuntar · Clic: disparar · <b>R</b>: pescar · <b>F</b>: bucear aquí / desembarcar en isla · <b>J</b>: Bitácora",
     walk: "WASD / Flechas: caminar · Shift: correr · <b>F</b>: hablar, abrir cofres o subir al barco · <b>J</b>: Bitácora",
-    dive: "WASD: nadar · Flechas: mirar · Espacio/Shift: subir/bajar · Clic/<b>E</b>: arpón 🔱 · Busca cofres 🧰 y cuevas en las montañas · <b>F</b>: volver al barco · <b>J</b>: Bitácora",
+    dive: "WASD: nadar · Flechas: mirar · Espacio/Shift: subir/bajar · Clic/<b>E</b>: arpón 🔱 · 📡 El detector te guía a cofres enterrados 🧰 · Cuevas en las montañas · <b>F</b>: volver al barco · <b>J</b>: Bitácora",
     cave: "Usa el sonar: 🟡 tesoro · 🔵 salida · punto que late = criatura · Clic/<b>E</b>: arpón · WASD: nadar · Flechas: mirar · <b>F</b>: volver al barco",
   };
 
@@ -1631,17 +1747,51 @@
     render();
   }
 
-  function openPuzzle(title, intro, onSolved) {
+  // Riddles: a shuffled deck so the same one doesn't come back too soon.
+  let riddleDeck = [];
+  function renderRiddle(onSolved) {
+    if (!riddleDeck.length) riddleDeck = shuffleArray(RIDDLES.map((_, i) => i));
+    const r = RIDDLES[riddleDeck.pop()];
+    puzzleHint.textContent = "Adivina la respuesta: puedes intentarlo varias veces";
+    puzzleBody.innerHTML = `<div id="puzzle-question" class="riddle-question"></div><div class="math-choices riddle-choices"></div>`;
+    puzzleBody.querySelector("#puzzle-question").textContent = "🧩 " + r.q;
+    const choicesEl = puzzleBody.querySelector(".math-choices");
+    shuffleArray([r.a, ...r.o]).forEach((c) => {
+      const btn = document.createElement("button");
+      btn.className = "math-choice riddle-choice";
+      btn.textContent = c;
+      btn.addEventListener("click", () => {
+        if (c === r.a) {
+          btn.classList.add("correct");
+          setTimeout(onSolved, 450);
+        } else {
+          btn.classList.add("wrong");
+          btn.disabled = true;
+        }
+      });
+      choicesEl.appendChild(btn);
+    });
+  }
+
+  // opts.type: "riddle" | "math" | "slider" (random if omitted);
+  // opts.onCancel runs when the player leaves it for later.
+  let puzzleOnCancel = null;
+  function openPuzzle(title, intro, onSolved, opts) {
+    opts = opts || {};
     state.modalOpen = true;
     puzzleTitle.textContent = title;
     puzzleIntro.textContent = intro;
     puzzleModal.classList.remove("hidden");
+    puzzleOnCancel = opts.onCancel || null;
     const done = () => {
       puzzleModal.classList.add("hidden");
       state.modalOpen = false;
+      puzzleOnCancel = null;
       onSolved();
     };
-    if (Math.random() < 0.5) renderMathPuzzle(done);
+    const type = opts.type || ["riddle", "math", "slider"][Math.floor(Math.random() * 3)];
+    if (type === "riddle") renderRiddle(done);
+    else if (type === "math") renderMathPuzzle(done);
     else renderSliderPuzzle(done);
   }
 
@@ -1673,6 +1823,8 @@
   puzzleCancel.addEventListener("click", () => {
     puzzleModal.classList.add("hidden");
     state.modalOpen = false;
+    if (puzzleOnCancel) puzzleOnCancel();
+    puzzleOnCancel = null;
   });
 
   // ---------------- Save / load ----------------
@@ -2405,13 +2557,12 @@
     // sunken chests
     seaChests.forEach((c) => {
       if (state.seaChests.has(c.index)) return;
-      if (Math.hypot(camera.position.x - c.x, camera.position.y - c.y, camera.position.z - c.z) < 8) {
-        state.seaChests.add(c.index);
-        state.coins += c.reward;
-        refreshCounters();
-        showBanner(`${c.wreck ? "⚓ ¡Tesoro del naufragio!" : "🧰 ¡Cofre hundido!"} +${c.reward} 🪙`);
-        saveGame();
+      const d = Math.hypot(camera.position.x - c.x, camera.position.y - c.y, camera.position.z - c.z);
+      if (c.snooze) {
+        if (d > 16) c.snooze = false; // swim away and back to try again
+        return;
       }
+      if (d < 7) openSeaChest(c);
     });
     // mythic treasures of Atlantis
     mythics.forEach((m) => {
@@ -2422,6 +2573,47 @@
       if (Math.hypot(camera.position.x - a.x, camera.position.z - a.z) < 45) returnToBoat();
     }
     depthMeterEl.textContent = `⬇ ${Math.round(-camera.position.y)} m · límite ${diveDepthLimit()} m`;
+  }
+
+  // A buried chest opens only after answering its riddle.
+  function openSeaChest(c) {
+    const title = c.wreck ? "⚓ Cofre del naufragio" : "🧰 Cofre enterrado";
+    openPuzzle(title, "El cofre tiene una cerradura con una adivinanza grabada. ¿Cuál es la respuesta?", () => {
+      state.seaChests.add(c.index);
+      state.coins += c.reward;
+      state.oxygen = Math.min(state.maxOxygen, state.oxygen + 25);
+      refreshCounters();
+      showBanner(`${c.wreck ? "⚓ ¡Tesoro del naufragio!" : "🧰 ¡Cofre abierto!"} +${c.reward} 🪙`);
+      saveGame();
+    }, { type: "riddle", onCancel: () => (c.snooze = true) });
+  }
+
+  // Treasure detector: how close the nearest hidden chest is (dive: sunken
+  // chests; on an island: its buried chest).
+  const detectorEl = document.getElementById("detector");
+  function updateDetector() {
+    let d = Infinity;
+    const walking = state.mode === "walk";
+    if (state.mode === "dive") {
+      const c = camera.position;
+      seaChests.forEach((ch) => {
+        if (!state.seaChests.has(ch.index)) d = Math.min(d, Math.hypot(ch.x - c.x, ch.y - c.y, ch.z - c.z));
+      });
+    } else if (walking && state.island && state.island.chest && !state.chestsOpened.has(state.island.index)) {
+      d = Math.hypot(state.island.chest.x - player.pos.x, state.island.chest.z - player.pos.z);
+    }
+    const show = state.started && (state.mode === "dive" || walking) && d < Infinity;
+    detectorEl.classList.toggle("hidden", !show);
+    if (!show) return;
+    const scale = walking ? 0.25 : 1; // islands are small: tighter ranges
+    const text =
+      d > 150 * scale ? "📡 Detector: sin señal" :
+      d > 80 * scale ? "📡 ❄️ Frío" :
+      d > 40 * scale ? "📡 🌤 Tibio" :
+      d > 15 * scale ? "📡 🔥 Caliente" : "📡 🔥🔥 ¡Muy caliente! Está aquí";
+    if (detectorEl.textContent !== text) detectorEl.textContent = text;
+    detectorEl.classList.toggle("hot", d <= 40 * scale);
+    detectorEl.classList.toggle("walk", walking);
   }
 
   function updateCaveLogic(dt) {
@@ -2476,6 +2668,105 @@
         }
       }
     });
+  }
+
+  // ---------------- Light under the water ----------------
+  // Shafts of sunlight slanting down from the surface and specks of "marine
+  // snow" drifting around the diver; both fade away as the diver goes deeper.
+  function rayTexture() {
+    const c = document.createElement("canvas");
+    c.width = 64;
+    c.height = 256;
+    const ctx = c.getContext("2d");
+    const v = ctx.createLinearGradient(0, 0, 0, 256);
+    v.addColorStop(0, "rgba(255,255,255,0)");
+    v.addColorStop(0.06, "rgba(255,255,255,0.9)");
+    v.addColorStop(0.4, "rgba(255,255,255,0.35)");
+    v.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, 64, 256);
+    // soft sides
+    ctx.globalCompositeOperation = "destination-in";
+    const h = ctx.createLinearGradient(0, 0, 64, 0);
+    h.addColorStop(0, "rgba(0,0,0,0)");
+    h.addColorStop(0.5, "rgba(0,0,0,1)");
+    h.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = h;
+    ctx.fillRect(0, 0, 64, 256);
+    return new THREE.CanvasTexture(c);
+  }
+  const RAY_COUNT = LOW_END ? 10 : 18;
+  const RAY_LEN = 120;
+  const rayTex = rayTexture();
+  const rayGeo = new THREE.PlaneGeometry(1, RAY_LEN);
+  rayGeo.translate(0, -RAY_LEN / 2, 0); // hang from the surface
+  const sunRays = [];
+  for (let i = 0; i < RAY_COUNT; i++) {
+    const m = new THREE.Mesh(rayGeo, new THREE.MeshBasicMaterial({ map: rayTex, color: 0xcff6ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+    m.visible = false;
+    mainScene.add(m);
+    sunRays.push({ m, phase: rand(0, 10), speed: rand(0.3, 0.8), width: rand(3, 11) });
+  }
+  // the rays lean along the sun's direction
+  const rayLean = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), SUN_DIR);
+  function placeRay(r, near) {
+    const a = rand(0, Math.PI * 2), d = near ? rand(4, 70) : rand(45, 75);
+    r.m.position.set(camera.position.x + Math.cos(a) * d, -0.5, camera.position.z + Math.sin(a) * d);
+  }
+
+  const SNOW_COUNT = LOW_END ? 250 : 500;
+  const SNOW_BOX = 70;
+  const snowGeo = new THREE.BufferGeometry();
+  const snowPos = new Float32Array(SNOW_COUNT * 3);
+  for (let i = 0; i < SNOW_COUNT * 3; i++) snowPos[i] = rand(-SNOW_BOX / 2, SNOW_BOX / 2);
+  snowGeo.setAttribute("position", new THREE.BufferAttribute(snowPos, 3));
+  const snowDot = document.createElement("canvas");
+  snowDot.width = snowDot.height = 32;
+  const snowCtx = snowDot.getContext("2d");
+  const snowGrad = snowCtx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  snowGrad.addColorStop(0, "rgba(255,255,255,1)");
+  snowGrad.addColorStop(0.4, "rgba(255,255,255,0.5)");
+  snowGrad.addColorStop(1, "rgba(255,255,255,0)");
+  snowCtx.fillStyle = snowGrad;
+  snowCtx.fillRect(0, 0, 32, 32);
+  const marineSnow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ map: new THREE.CanvasTexture(snowDot), color: 0xd8eef2, size: 0.3, transparent: true, opacity: 0.6, depthWrite: false }));
+  marineSnow.frustumCulled = false;
+  marineSnow.visible = false;
+  mainScene.add(marineSnow);
+  let raysPlaced = false;
+
+  function updateUnderwaterLight(dt) {
+    const t = state.time;
+    const diving = state.mode === "dive";
+    causticUniforms.uTime.value = t;
+    causticUniforms.uCaustic.value = diving ? 1 : 0;
+    const depth = Math.max(0, -camera.position.y);
+    const rayK = diving ? Math.max(0, 1 - depth / 140) : 0;
+    sunRays.forEach((r) => {
+      r.m.visible = rayK > 0;
+      if (!r.m.visible) return;
+      if (!raysPlaced || Math.hypot(r.m.position.x - camera.position.x, r.m.position.z - camera.position.z) > 80) placeRay(r, !raysPlaced);
+      const flicker = 0.5 + 0.5 * Math.sin(t * r.speed + r.phase);
+      r.m.material.opacity = 0.13 * rayK * flicker;
+      // face the camera around the ray's own (leaning) axis
+      r.m.quaternion.copy(rayLean);
+      const yaw = Math.atan2(camera.position.x - r.m.position.x, camera.position.z - r.m.position.z);
+      r.m.rotateY(yaw);
+      r.m.scale.set(r.width * (0.8 + 0.4 * flicker), 1, 1);
+    });
+    raysPlaced = rayK > 0;
+
+    marineSnow.visible = diving;
+    if (diving) {
+      // specks live in world space inside a box that wraps around the diver
+      const c = camera.position, half = SNOW_BOX / 2;
+      const wrap = (v, o) => o - half + ((((v - o + half) % SNOW_BOX) + SNOW_BOX) % SNOW_BOX);
+      const p = snowGeo.attributes.position;
+      for (let i = 0; i < SNOW_COUNT; i++) {
+        p.setXYZ(i, wrap(p.getX(i), c.x), wrap(p.getY(i) - dt * 0.6, c.y), wrap(p.getZ(i), c.z));
+      }
+      p.needsUpdate = true;
+    }
   }
 
   // ---------------- Harpoon ----------------
@@ -4015,7 +4306,7 @@
 
   function walkInteract() {
     const t = walkTarget();
-    if (!t) showBanner(state.island.home ? "Busca a Doña Marisol, el mercado o el taller" : "Explora la isla: hay un cofre escondido 🧰");
+    if (!t) showBanner(state.island.home ? "Busca a Doña Marisol, el mercado o el taller" : "Hay un cofre enterrado en esta isla: sigue el detector 📡");
     else if (t.kind === "boat") exitWalk();
     else if (t.kind === "chest") openIslandChest(state.island);
     else if (t.kind === "missions") talkMarisol();
@@ -4026,11 +4317,14 @@
 
   function openIslandChest(isl) {
     const reward = 25 + Math.round(hash(isl.index, 5) * 35);
-    state.chestsOpened.add(isl.index);
-    state.coins += reward;
-    refreshCounters();
-    showBanner(`🧰 ¡Cofre del explorador! +${reward} 🪙`);
-    saveGame();
+    openPuzzle("🧰 Cofre del explorador", "Un viejo explorador dejó este cofre cerrado con una adivinanza:", () => {
+      state.chestsOpened.add(isl.index);
+      if (isl.chest) isl.chest.mesh.visible = false;
+      state.coins += reward;
+      refreshCounters();
+      showBanner(`🧰 ¡Cofre del explorador! +${reward} 🪙`);
+      saveGame();
+    }, { type: "riddle" });
   }
 
   function updateWalk(dt) {
@@ -4359,18 +4653,11 @@
       radarCtx.fillStyle = "#ffffff";
       radarCtx.fillRect(bx - 4, by - 4, 8, 8);
     } else if (diving) {
-      // sonar: boat above, nearby chests, cave mouths, the zone's creature
+      // sonar: boat above, cave mouths, the zone's creature
       const [bx, by] = toRadar(state.diveAnchor.x, state.diveAnchor.z);
       radarCtx.fillStyle = "#ffffff";
       radarCtx.fillRect(bx - 4, by - 4, 8, 8);
-      seaChests.forEach((c) => {
-        if (state.seaChests.has(c.index) || Math.hypot(c.x - originX, c.z - originZ) > 120) return;
-        const [px, py] = toRadar(c.x, c.z);
-        radarCtx.fillStyle = "#ffd76b";
-        radarCtx.beginPath();
-        radarCtx.arc(px, py, 3 + Math.sin(state.time * 6) * 0.8, 0, Math.PI * 2);
-        radarCtx.fill();
-      });
+      // buried chests are not on the sonar: the treasure detector points the way
       // danger: sharks and the Kraken
       sharks.forEach((sh) => {
         if (!sh.mesh.visible) return;
@@ -4593,6 +4880,8 @@
       updateDeepSea(dt);
       depthMeterEl.classList.toggle("hidden", state.mode !== "dive" && state.mode !== "cave");
       updateBubbles(dt);
+      updateUnderwaterLight(dt);
+      updateDetector();
       drawRadar();
       sky.position.copy(camera.position);
       updateSun(state.mode === "walk" ? player.pos : state.mode === "dive" ? camera.position : boat.position);

@@ -208,7 +208,7 @@ const ZMIslands = (function () {
       const d = e * shoreRadius(isl, aa);
       const wx = isl.x + Math.cos(aa) * d, wz = isl.z + Math.sin(aa) * d;
       if (!freeSpot(isl, wx, wz, 1.5) || (isl.lava && Math.hypot(wx - isl.x, wz - isl.z) < isl.lava.r + 4)) continue;
-      const chest = placeAt(isl, M.buildChest(), wx, wz, 0.1);
+      const chest = placeAt(isl, M.buildChest(), wx, wz, -0.55); // half buried: it has to be found
       chest.rotation.y = hash(seed, 93) * Math.PI * 2;
       isl.colliders.push({ x: wx, z: wz, r: 1.5 });
       isl.chest = { x: wx, z: wz, mesh: chest };

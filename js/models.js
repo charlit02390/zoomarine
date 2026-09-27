@@ -439,32 +439,92 @@ const ZMModels = (function () {
   }
 
   // ---------------- Fish ----------------
-  // Shared lathe body (nose toward +x) with darker back / lighter belly vertex
-  // shading; the material colour gives each species its tint.
+  // Shared lathe body (nose toward +x, x from -1 tail to 1 nose), laterally
+  // compressed, with a slim tail stalk and a rounded head. The look comes from
+  // makeFishSkin: a scale texture, countershading (dark back, silver belly)
+  // done in the shader so the material colour still picks the species, and a
+  // body wave driven by swimFish.
   let fishBodyGeo = null;
   function getFishBodyGeo() {
     if (fishBodyGeo) return fishBodyGeo;
     const pts = [];
-    for (let i = 0; i <= 12; i++) {
-      const t = i / 12; // 0 = tail, 1 = nose
-      const y = -1 + t * 2;
-      const r = 0.42 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.05)), 0.8) * (0.75 + 0.35 * t) + 0.02;
-      pts.push(new THREE.Vector2(i === 0 || i === 12 ? 0.01 : r, y));
+    const N = 18;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N; // 0 = tail, 1 = nose
+      // slim stalk at the tail, deepest just behind the head, rounded snout
+      const body = Math.pow(Math.sin(Math.PI * Math.min(1, 0.06 + t * 0.97)), 0.75);
+      const stalk = 0.35 + 0.65 * THREE.MathUtils.smoothstep(t, 0.0, 0.35);
+      const r = 0.4 * body * stalk * (0.8 + 0.3 * t) + 0.015;
+      pts.push(new THREE.Vector2(i === 0 || i === N ? 0.01 : r, -1 + t * 2));
     }
-    const g = new THREE.LatheGeometry(pts, 14);
+    const g = new THREE.LatheGeometry(pts, 20);
     g.rotateZ(-Math.PI / 2);
-    g.scale(1, 1, 0.55);
-    const p = g.attributes.position;
-    const cols = [];
-    for (let i = 0; i < p.count; i++) {
-      const k = THREE.MathUtils.clamp(0.5 + p.getY(i) / 0.9, 0, 1); // 0 belly .. 1 back
-      const v = 1.15 - k * 0.55;
-      cols.push(Math.min(1, v), Math.min(1, v), Math.min(1, v * 1.02));
-    }
-    g.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
+    g.scale(1, 1, 0.52);
     g.computeVertexNormals();
     fishBodyGeo = g;
     return g;
+  }
+
+  // Grey-scale scales and lateral line; the material colour tints it.
+  let fishScaleTex = null;
+  function getFishScaleTex() {
+    if (fishScaleTex) return fishScaleTex;
+    const W = 256, H = 128;
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext("2d");
+    const img = ctx.createImageData(W, H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const u = x / W, v = 1 - y / H; // u around the body, v tail -> nose
+        const back = 0.5 - 0.5 * Math.sin(Math.PI * 2 * u);
+        // overlapping scale rows: little arcs darker at their rims
+        const su = u * 46, sv = v * 30 + (Math.floor(su) % 2) * 0.5;
+        const fu = su - Math.floor(su) - 0.5, fv = sv - Math.floor(sv) - 0.5;
+        const rim = Math.min(1, Math.hypot(fu * 1.2, fv * 0.9 + 0.2) * 1.6);
+        let l = 1 - Math.pow(rim, 6) * 0.22;
+        // lateral line along each flank
+        const flank = Math.abs(back - 0.58);
+        l *= 1 - Math.max(0, 1 - flank * 60) * 0.35 * THREE.MathUtils.smoothstep(v, 0.08, 0.75);
+        l *= 0.92 + 0.08 * Math.sin(v * 37 + u * 11) * Math.sin(u * 23);
+        const i = (y * W + x) * 4;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.round(255 * Math.max(0, Math.min(1, l)));
+        img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    fishScaleTex = new THREE.CanvasTexture(c);
+    fishScaleTex.wrapS = THREE.RepeatWrapping;
+    return fishScaleTex;
+  }
+
+  // Skin material shared by fish and sharks. userData.swim = (phase, amplitude).
+  function makeFishSkin(color, opts) {
+    opts = opts || {};
+    const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), map: getFishScaleTex(), roughness: opts.rough || 0.34, metalness: opts.metal === undefined ? 0.28 : opts.metal });
+    mat.userData.swim = { value: new THREE.Vector2(0, 0) };
+    const belly = new THREE.Color(opts.belly || 0xe8ecef);
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uSwim = mat.userData.swim;
+      shader.uniforms.uBelly = { value: belly };
+      shader.vertexShader = "uniform vec2 uSwim;\n" + shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+         // body wave: travels toward the tail and grows along the body
+         float bendW = pow(clamp((1.0 - position.x) * 0.5, 0.0, 1.0), 2.0);
+         transformed.z += sin(uSwim.x + position.x * 2.4) * uSwim.y * bendW;`
+      );
+      shader.fragmentShader = "uniform vec3 uBelly;\n" + shader.fragmentShader.replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+         // countershading: dark back, species colour on the flanks, silver belly
+         float backK = 0.5 - 0.5 * sin(6.2831853 * vUv.x);
+         diffuseColor.rgb = mix(uBelly * (0.75 + 0.25 * texelColor.r), diffuseColor.rgb, smoothstep(0.16, 0.5, backK));
+         diffuseColor.rgb *= mix(1.0, 0.5, smoothstep(0.72, 1.0, backK));`
+      );
+    };
+    return mat;
   }
 
   function triShape(points) {
@@ -477,22 +537,30 @@ const ZMModels = (function () {
   const finGeos = {};
   function finGeo(kind) {
     if (!finGeos[kind]) {
-      if (kind === "tail") finGeos[kind] = triShape([[0, 0], [-0.55, 0.5], [-0.38, 0], [-0.55, -0.5]]);
-      else if (kind === "dorsal") finGeos[kind] = triShape([[0.35, 0], [-0.4, 0], [-0.25, 0.42]]);
+      if (kind === "tail") finGeos[kind] = triShape([[0.04, 0], [-0.36, 0.5], [-0.52, 0.52], [-0.34, 0.03], [-0.34, -0.03], [-0.52, -0.52], [-0.36, -0.5]]);
+      else if (kind === "dorsal") finGeos[kind] = triShape([[0.32, 0], [-0.42, 0], [-0.34, 0.12], [-0.12, 0.34], [0.12, 0.3]]);
+      else if (kind === "anal") finGeos[kind] = triShape([[0.1, 0], [-0.36, 0], [-0.3, -0.18], [-0.05, -0.16]]);
       else if (kind === "sail") finGeos[kind] = triShape([[0.6, 0], [-0.7, 0], [-0.4, 0.9], [0.4, 0.8]]);
       else if (kind === "bill") finGeos[kind] = new THREE.ConeGeometry(0.05, 0.9, 5).rotateZ(-Math.PI / 2);
+      else if (kind === "pectoral") {
+        const g = triShape([[0.06, 0], [-0.06, 0.02], [-0.3, 0.2], [-0.22, 0.26]]);
+        g.rotateX(-Math.PI / 2);
+        finGeos[kind] = g;
+      }
     }
     return finGeos[kind];
   }
-  const eyeGeo = new THREE.SphereGeometry(0.07, 6, 6);
+  const eyeGeo = new THREE.SphereGeometry(0.07, 10, 8);
   const eyeMat = new THREE.MeshBasicMaterial({ color: 0x080808 });
+  const irisMat = new THREE.MeshStandardMaterial({ color: 0xd8c27a, roughness: 0.2, metalness: 0.4 });
+  const pupilGeo = new THREE.SphereGeometry(0.045, 8, 6);
 
   // opts: { special, sail, bill, glow }
   function buildFish(color, scale, opts) {
     opts = opts || {};
     const g = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), vertexColors: true, roughness: 0.35, metalness: 0.25 });
-    const finMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(0.75), roughness: 0.6, side: THREE.DoubleSide });
+    const bodyMat = makeFishSkin(color);
+    const finMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(0.8), roughness: 0.5, side: THREE.DoubleSide, transparent: true, opacity: 0.78 });
     if (opts.glow) {
       bodyMat.emissive = new THREE.Color(opts.glow);
       bodyMat.emissiveIntensity = 0.45;
@@ -502,37 +570,60 @@ const ZMModels = (function () {
     const body = new THREE.Mesh(getFishBodyGeo(), bodyMat);
     g.add(body);
     const tailPivot = new THREE.Group();
-    tailPivot.position.x = -0.95;
+    tailPivot.position.x = -0.97;
     tailPivot.add(new THREE.Mesh(finGeo("tail"), finMat));
     g.add(tailPivot);
     const dorsal = new THREE.Mesh(finGeo(opts.sail ? "sail" : "dorsal"), finMat);
-    dorsal.position.set(0, 0.3, 0);
+    dorsal.position.set(0.02, 0.3, 0);
     g.add(dorsal);
-    const ventral = new THREE.Mesh(finGeo("dorsal"), finMat);
-    ventral.scale.set(0.6, -0.6, 1);
-    ventral.position.set(-0.2, -0.28, 0);
-    g.add(ventral);
+    const anal = new THREE.Mesh(finGeo("anal"), finMat);
+    anal.position.set(-0.3, -0.24, 0);
+    g.add(anal);
+    const pecs = [-1, 1].map((s) => {
+      const pec = new THREE.Mesh(finGeo("pectoral"), finMat);
+      pec.position.set(0.42, -0.08, s * 0.15);
+      pec.scale.z = -s;
+      pec.rotation.x = s * 0.35;
+      g.add(pec);
+      return pec;
+    });
     if (opts.bill) {
       const bill = new THREE.Mesh(finGeo("bill"), finMat);
       bill.position.x = 1.35;
       g.add(bill);
     }
+    // eyes: golden iris with a dark pupil, set into the side of the head
     [-1, 1].forEach((s) => {
-      const e = new THREE.Mesh(eyeGeo, eyeMat);
-      e.position.set(0.68, 0.08, s * 0.16);
-      g.add(e);
+      const iris = new THREE.Mesh(eyeGeo, irisMat);
+      iris.position.set(0.7, 0.07, s * 0.13);
+      iris.scale.set(1, 1, 0.55);
+      const pupil = new THREE.Mesh(pupilGeo, eyeMat);
+      pupil.position.set(0.71, 0.07, s * 0.165);
+      pupil.scale.set(1, 1, 0.5);
+      g.add(iris, pupil);
     });
     g.scale.setScalar(scale || 1);
     g.userData.tail = tailPivot;
+    g.userData.pecs = pecs;
     g.userData.mainMaterial = bodyMat;
     g.userData.phase = Math.random() * 10;
     return g;
   }
 
-  // Tail wiggle; call every frame with the fish's current speed factor.
+  // Swimming: a wave runs down the body and the tail follows it; call every
+  // frame with the fish's current speed factor.
   function swimFish(fish, t, rate) {
     const r = rate === undefined ? 1 : rate;
-    fish.userData.tail.rotation.y = Math.sin(t * (6 + r * 8) + fish.userData.phase) * (0.35 + r * 0.25);
+    const u = fish.userData;
+    const phase = t * (5 + r * 7) + u.phase;
+    const amp = 0.05 + r * 0.05;
+    const swim = u.mainMaterial.userData.swim;
+    if (swim) swim.value.set(phase, amp);
+    // the tail sits where the body wave ends; it points along the wave's slope
+    const tailX = -0.97;
+    u.tail.position.z = swim ? Math.sin(phase + tailX * 2.4) * amp : 0;
+    u.tail.rotation.y = Math.sin(phase + tailX * 2.4 - 1.1) * (0.3 + r * 0.25);
+    if (u.pecs) u.pecs.forEach((p, i) => (p.rotation.y = Math.sin(t * 3 + u.phase + i * Math.PI) * 0.25));
   }
 
   // ---------------- Whales ----------------
@@ -649,10 +740,10 @@ const ZMModels = (function () {
   // side to side like a fish (swimFish works on it).
   function buildShark(color, scale) {
     const g = new THREE.Group();
-    const skin = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), vertexColors: true, roughness: 0.5, metalness: 0.1 });
+    const skin = makeFishSkin(color, { rough: 0.55, metal: 0.05, belly: 0xf2f2f0 });
     const finMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(0.85), roughness: 0.55, side: THREE.DoubleSide });
     const body = new THREE.Mesh(getFishBodyGeo(), skin);
-    body.scale.set(1.25, 0.75, 0.8);
+    body.scale.set(1.25, 0.75, 1.1);
     g.add(body);
     const tail = new THREE.Group();
     tail.position.x = -1.15;
@@ -717,7 +808,63 @@ const ZMModels = (function () {
     spear.position.set(0, 0.07, -0.55);
     g.add(spear);
     g.userData.spear = spear;
+    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.07, 0.03), dark);
+    trigger.position.set(0, -0.06, 0.03);
+    g.add(trigger);
+    addDiverHands(g);
     return g;
+  }
+
+  // The diver's hands on the speargun: right hand on the grip with the index
+  // finger on the trigger, left hand under the barrel, wetsuit sleeves.
+  function addDiverHands(g) {
+    const skin = std(0xc68a5e, { roughness: 0.6 });
+    const suit = std(0x1b1f25, { roughness: 0.85 });
+    const cuff = std(0x2aa1b3, { roughness: 0.7 });
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    const finger = (a, b, r) => {
+      const f = rod(a, b, r || 0.022, skin, 6);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(r || 0.022, 6, 5), skin);
+      tip.position.copy(b);
+      g.add(f, tip);
+    };
+    const forearm = (wrist, elbow) => {
+      g.add(rod(wrist, elbow, 0.075, suit, 10));
+      const band = rod(wrist, wrist.clone().lerp(elbow, 0.06), 0.08, cuff, 10);
+      g.add(band);
+      const wristSkin = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), skin);
+      wristSkin.position.copy(wrist);
+      wristSkin.scale.set(1, 0.8, 1);
+      g.add(wristSkin);
+    };
+
+    // right hand wrapped around the grip
+    const palmR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.19, 0.13), skin);
+    palmR.position.set(0.06, -0.16, 0.15);
+    palmR.rotation.x = -0.3;
+    g.add(palmR);
+    for (let i = 0; i < 3; i++) {
+      const y = -0.13 - i * 0.045;
+      finger(V(0.08, y, 0.1 + i * 0.012), V(0.02, y - 0.01, 0.04 + i * 0.015), 0.021);
+      finger(V(0.02, y - 0.01, 0.04 + i * 0.015), V(-0.05, y - 0.015, 0.07 + i * 0.015), 0.019);
+    }
+    finger(V(0.07, -0.07, 0.1), V(0.03, -0.06, 0.02), 0.02); // index on the trigger
+    finger(V(0.03, -0.06, 0.02), V(0.005, -0.08, -0.01), 0.018);
+    finger(V(-0.03, -0.1, 0.17), V(-0.06, -0.03, 0.08), 0.024); // thumb over the top
+    forearm(V(0.08, -0.27, 0.27), V(0.42, -0.78, 1.0));
+
+    // left hand cradling the barrel
+    const palmL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.06, 0.2), skin);
+    palmL.position.set(-0.02, -0.1, -0.62);
+    palmL.rotation.z = 0.25;
+    g.add(palmL);
+    for (let i = 0; i < 4; i++) {
+      const z = -0.7 + i * 0.05;
+      finger(V(-0.08, -0.1, z), V(-0.08, -0.01, z - 0.01), 0.019);
+      finger(V(-0.08, -0.01, z - 0.01), V(-0.04, 0.05, z - 0.01), 0.017);
+    }
+    finger(V(0.06, -0.09, -0.58), V(0.07, -0.02, -0.66), 0.022); // thumb on the far side
+    forearm(V(-0.06, -0.14, -0.5), V(-0.62, -0.72, 0.35));
   }
 
   // ---------------- Kraken ----------------
@@ -847,9 +994,11 @@ const ZMModels = (function () {
       const knee = new THREE.Group();
       knee.position.y = -0.55;
       knee.add(segment(0.12, 0.085, 0.5, o.bottom === "pants" ? bottom : skin));
-      const shoe = new THREE.Mesh(cgeo("shoe", () => new THREE.BoxGeometry(0.2, 0.12, 0.36)), cmat(o.shoes, 0.7));
-      shoe.position.set(0, -0.54, -0.08);
-      knee.add(shoe);
+      const shoe = new THREE.Mesh(cgeo("shoe", () => new THREE.SphereGeometry(0.13, 12, 8).scale(0.8, 0.55, 1.45)), cmat(o.shoes, 0.7));
+      shoe.position.set(0, -0.54, -0.07);
+      const sole = new THREE.Mesh(cgeo("sole", () => new THREE.BoxGeometry(0.19, 0.035, 0.36)), cmat(0x2a2320, 0.9));
+      sole.position.set(0, -0.6, -0.07);
+      knee.add(shoe, sole);
       hip.add(knee);
       rig.add(hip);
       return { hip, knee };
@@ -878,9 +1027,12 @@ const ZMModels = (function () {
       const el = new THREE.Group();
       el.position.y = -0.42;
       el.add(segment(0.085, 0.07, 0.4, skin));
-      const hand = new THREE.Mesh(cgeo("hand", () => new THREE.SphereGeometry(0.1, 8, 8).scale(0.8, 1.1, 0.6)), skin);
-      hand.position.y = -0.48;
-      el.add(hand);
+      const hand = new THREE.Mesh(cgeo("hand", () => new THREE.SphereGeometry(0.09, 10, 8).scale(0.62, 1.2, 0.95)), skin);
+      hand.position.y = -0.47;
+      const thumb = new THREE.Mesh(cgeo("thumb", () => new THREE.CylinderGeometry(0.025, 0.021, 0.1, 6)), skin);
+      thumb.position.set(0, -0.44, -0.07);
+      thumb.rotation.x = 0.6;
+      el.add(hand, thumb);
       sh.add(el);
       rig.add(sh);
       return { sh, el };
@@ -890,34 +1042,58 @@ const ZMModels = (function () {
     AR.sh.rotation.z = 0.08;
 
     // neck + head
-    const neck = new THREE.Mesh(cgeo("neck", () => new THREE.CylinderGeometry(0.1, 0.11, 0.18, 8)), skin);
-    neck.position.y = HIP + 0.94;
+    const neck = new THREE.Mesh(cgeo("neck", () => new THREE.CylinderGeometry(0.095, 0.115, 0.26, 10)), skin);
+    neck.position.y = HIP + 0.97;
     rig.add(neck);
+    const collar = new THREE.Mesh(cgeo("collar", () => new THREE.TorusGeometry(0.15, 0.035, 6, 16).rotateX(Math.PI / 2).scale(1, 1, 0.8)), shirt);
+    collar.position.y = HIP + 0.87;
+    rig.add(collar);
     const head = new THREE.Group();
-    head.position.y = HIP + 1.26;
+    head.position.y = HIP + 1.28;
     rig.add(head);
-    const skull = new THREE.Mesh(cgeo("skull", () => new THREE.SphereGeometry(0.28, 18, 14).scale(0.92, 1.06, 0.98)), skin);
+    // egg-shaped head: wide cranium, narrower jaw and chin
+    const skull = new THREE.Mesh(cgeo("skull2", () => {
+      const prof = [[0.001, -0.3], [0.08, -0.295], [0.14, -0.26], [0.19, -0.19], [0.235, -0.09], [0.262, 0.01], [0.275, 0.1], [0.262, 0.19], [0.215, 0.26], [0.13, 0.305], [0.001, 0.32]];
+      const g = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 20);
+      g.scale(0.9, 1, 1.02);
+      g.computeVertexNormals();
+      return g;
+    }), skin);
     head.add(skull);
-    const white = cmat(0xffffff, 0.3), dark = cmat(0x1a1210, 0.4);
+    const white = cmat(0xf4f1ea, 0.3), dark = cmat(0x0e0a08, 0.3), iris = cmat(o.eyes || 0x4a2c17, 0.35);
+    const lid = cmat(new THREE.Color(o.skin).multiplyScalar(0.9).getHex(), 0.75);
     [-1, 1].forEach((s) => {
-      const eye = new THREE.Mesh(cgeo("eyeW", () => new THREE.SphereGeometry(0.045, 10, 8).scale(1, 0.8, 0.6)), white);
-      eye.position.set(s * 0.1, 0.03, -0.255);
-      const pupil = new THREE.Mesh(cgeo("pupil", () => new THREE.SphereGeometry(0.025, 8, 6)), dark);
-      pupil.position.set(s * 0.1, 0.03, -0.278);
-      const brow = new THREE.Mesh(cgeo("brow", () => new THREE.BoxGeometry(0.11, 0.022, 0.03)), hairMat);
-      brow.position.set(s * 0.1, 0.115, -0.255);
-      brow.rotation.z = s * -0.12;
-      const ear = new THREE.Mesh(cgeo("ear", () => new THREE.SphereGeometry(0.06, 8, 6).scale(0.5, 1, 0.8)), skin);
-      ear.position.set(s * 0.265, 0, 0.02);
-      head.add(eye, pupil, brow, ear);
+      const eye = new THREE.Mesh(cgeo("eyeW2", () => new THREE.SphereGeometry(0.042, 12, 10).scale(1, 0.72, 0.6)), white);
+      eye.position.set(s * 0.095, 0.03, -0.238);
+      const ir = new THREE.Mesh(cgeo("iris", () => new THREE.SphereGeometry(0.022, 10, 8).scale(1, 1, 0.5)), iris);
+      ir.position.set(s * 0.095, 0.028, -0.262);
+      const pupil = new THREE.Mesh(cgeo("pupil2", () => new THREE.SphereGeometry(0.011, 8, 6).scale(1, 1, 0.5)), dark);
+      pupil.position.set(s * 0.095, 0.028, -0.2715);
+      // upper eyelid: a skin shell over the top of the eye
+      const upper = new THREE.Mesh(cgeo("lid", () => new THREE.SphereGeometry(0.046, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.42).scale(1, 0.8, 0.66)), lid);
+      upper.position.set(s * 0.095, 0.034, -0.236);
+      upper.rotation.x = -0.35;
+      const brow = new THREE.Mesh(cgeo("brow2", () => new THREE.CylinderGeometry(0.012, 0.016, 0.1, 6).rotateZ(Math.PI / 2)), hairMat);
+      brow.position.set(s * 0.1, 0.1, -0.245);
+      brow.rotation.z = s * -0.14;
+      const ear = new THREE.Mesh(cgeo("ear2", () => new THREE.SphereGeometry(0.058, 10, 8).scale(0.4, 1, 0.75)), skin);
+      ear.position.set(s * 0.245, 0.0, 0.02);
+      head.add(eye, ir, pupil, upper, brow, ear);
     });
-    const nose = new THREE.Mesh(cgeo("nose", () => new THREE.ConeGeometry(0.04, 0.11, 6).rotateX(-Math.PI / 2)), skin);
-    nose.position.set(0, -0.03, -0.29);
-    head.add(nose);
-    const mouth = new THREE.Mesh(cgeo("smile", () => new THREE.TorusGeometry(0.065, 0.013, 6, 12, Math.PI)), cmat(0x7a2a2a, 0.6));
-    mouth.rotation.z = Math.PI;
-    mouth.position.set(0, -0.1, -0.255);
-    head.add(mouth);
+    // nose: bridge and a rounded tip
+    const bridge = new THREE.Mesh(cgeo("bridge", () => new THREE.BoxGeometry(0.04, 0.1, 0.05)), skin);
+    bridge.position.set(0, -0.01, -0.262);
+    bridge.rotation.x = -0.25;
+    const tip = new THREE.Mesh(cgeo("noseTip", () => new THREE.SphereGeometry(0.034, 10, 8).scale(1.15, 0.9, 1)), skin);
+    tip.position.set(0, -0.06, -0.278);
+    head.add(bridge, tip);
+    // lips with a gentle smile
+    const lipMat = cmat(new THREE.Color(o.skin).lerp(new THREE.Color(0x9a3a3a), 0.35).getHex(), 0.55);
+    const upperLip = new THREE.Mesh(cgeo("lipU", () => new THREE.SphereGeometry(0.04, 10, 6).scale(1.2, 0.3, 0.45)), lipMat);
+    upperLip.position.set(0, -0.125, -0.236);
+    const lowerLip = new THREE.Mesh(cgeo("lipL", () => new THREE.SphereGeometry(0.034, 10, 6).scale(1.25, 0.45, 0.5)), lipMat);
+    lowerLip.position.set(0, -0.148, -0.232);
+    head.add(upperLip, lowerLip);
 
     // hair
     const cap = () => {
@@ -990,9 +1166,12 @@ const ZMModels = (function () {
       if (m.geometry.boundingSphere.radius < 0.16) m.castShadow = false;
     });
     if (o.kid) {
-      head.scale.setScalar(1.28);
-      head.position.y += 0.08;
+      head.scale.setScalar(1.18);
+      head.position.y += 0.06;
       g.scale.setScalar(0.6);
+    } else {
+      head.scale.setScalar(0.88); // adult proportions: about 7 heads tall
+      head.position.y -= 0.03;
     }
     g.userData = { rig, hipL: L.hip, hipR: R.hip, kneeL: L.knee, kneeR: R.knee, shL: AL.sh, shR: AR.sh, elL: AL.el, elR: AR.el, head, phase: Math.random() * 6, wave: 0, talk: 0, kick: 0 };
     return g;
