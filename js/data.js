@@ -239,6 +239,26 @@ const UPGRADES = {
 };
 const REPAIR_COST = 25;
 
+// Barcos del Garaje Náutico de Puerto Limón. speed/cruise: velocidad máxima
+// normal y en crucero; accel: aceleración; turn: rapidez de giro; health:
+// resistencia del casco; radius: tamaño para chocar; cam: distancia y altura
+// de la cámara; stern/bow: dónde nace la estela; plane: cuánto levanta la proa
+// al correr; lean: cuánto se inclina en las curvas.
+const BOATS = [
+  { id: "fishing", name: "Barco de pesca «Limón I»", icon: "🚢", cost: 0, speed: 58, cruise: 96, accel: 46, turn: 1.2, health: 100, radius: 8,
+    cam: [32, 13], stern: 9, bow: 11, plane: 0.02, lean: 0.05, cannon: true,
+    desc: "Equilibrado y resistente. Tiene cañón, cabina y mucho espacio para pescar." },
+  { id: "catamaran", name: "Catamarán «Brisa»", icon: "⛵", cost: 450, speed: 60, cruise: 114, accel: 36, turn: 0.85, health: 160, radius: 10,
+    cam: [38, 16], stern: 9, bow: 10, plane: 0.008, lean: 0.02, cannon: true,
+    desc: "Dos cascos y una vela enorme: casi no se mueve con las olas, aguanta muchos cañonazos y vuela en crucero, pero gira despacio." },
+  { id: "jetski", name: "Jet ski «Rayo»", icon: "🏍️", cost: 300, speed: 72, cruise: 104, accel: 85, turn: 2.3, health: 55, radius: 4,
+    cam: [16, 7], stern: 3.3, bow: 3.2, plane: 0.05, lean: 0.34, cannon: false,
+    desc: "Acelera y gira como ninguno. Es frágil y no tiene cañón: mejor huir de los piratas." },
+  { id: "speedboat", name: "Lancha rápida «Barracuda»", icon: "🚤", cost: 650, speed: 78, cruise: 132, accel: 58, turn: 1.45, health: 85, radius: 7,
+    cam: [28, 11], stern: 8.5, bow: 8, plane: 0.065, lean: 0.12, cannon: true,
+    desc: "La más veloz de los siete mares, con dos motores fuera de borda y un cañón ligero." },
+];
+
 // ---------------- Peligros del mar ----------------
 // Tiburones que rondan al buzo: a veces atacan y una mordida le roba aire.
 // Con el arpón se les espanta. Colores por mar (índice de SEAS o "limon").

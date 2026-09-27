@@ -266,6 +266,11 @@ const ZMIslands = (function () {
     const shopSign = M.sign("TALLER NÁUTICO", 6, 1.1, { bg: "#2b4a6f" });
     shopSign.position.set(0, 6.3, 4.1);
     shop.add(shopSign);
+    // boat garage between the workshop and the pier
+    const garage = add(M.buildHouse({ w: 12, d: 8, h: 5.2, wall: 0xe4e8ec, roof: 0x8a2a1f, trim: 0x2b4a6f }), -16, 73, faceTo(-16, 73, 0, 40), 6.5);
+    const garageSign = M.sign("GARAJE NÁUTICO", 7, 1.2, { bg: "#8a2a1f" });
+    garageSign.position.set(0, 6.9, 4.1);
+    garage.add(garageSign);
 
     // houses around the plaza
     const houses = [
@@ -338,13 +343,15 @@ const ZMIslands = (function () {
       { id: "missions", x: isl.x + 6, z: isl.z + 62, r: 6, label: "Hablar con Doña Marisol (misiones)" },
       { id: "market", x: isl.x + 38, z: isl.z + 69, r: 6, label: "Vender pescado en el mercado" },
       { id: "shop", x: isl.x - 30, z: isl.z + 63, r: 6.5, label: "Entrar al Taller Náutico" },
-      { id: "legend", x: isl.x + 27, z: isl.z + 70.5, r: 5, label: "Hablar con Tata Chema" }
+      { id: "legend", x: isl.x + 27, z: isl.z + 70.5, r: 5, label: "Hablar con Tata Chema" },
+      { id: "garage", x: isl.x - 13, z: isl.z + 65.5, r: 5.5, label: "Entrar al Garaje Náutico (barcos)" }
     );
     // NPCs that stay at their post: where they stand, which way they face, how they look
     isl.npcs = [
       { id: "marisol", x: isl.x + 6, z: isl.z + 59, ry: Math.PI, look: { female: true, skin: 0x6b4226, hair: "bun", hairColor: 0x8a8a8a, shirt: 0xe8484a, bottom: "skirt", bottomColor: 0xf2c94c } },
       { id: "fishmonger", x: isl.x + 38, z: isl.z + 62.8, ry: Math.PI, look: { skin: 0x4a2e1a, hair: "short", hairColor: 0x111111, shirt: 0xffffff, bottom: "pants", bottomColor: 0x2b3440, hat: 0xe8d28a } },
       { id: "mechanic", x: isl.x - 30, z: isl.z + 62, ry: lookTo(-30, 62, 0, 80), look: { skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, beard: 0x3a2412, shirt: 0x2b4a6f, bottom: "pants", bottomColor: 0x2b4a6f, hat: 0xff8a2a, hatStyle: "cap" } },
+      { id: "boatwright", x: isl.x - 10.5, z: isl.z + 65, ry: lookTo(-10.5, 65, 0, 55), look: { female: true, skin: 0x8a5a3a, hair: "long", hairColor: 0x1a1210, shirt: 0xf4f4f4, bottom: "pants", bottomColor: 0x1d3b6e, hat: 0x1d3b6e, hatStyle: "cap" } },
       { id: "chema", x: isl.x + 27, z: isl.z + 74, ry: lookTo(27, 74, 18, 66), look: { skin: 0x5a3a22, hair: "bald", beard: 0xdedede, hairColor: 0xdedede, shirt: 0xf2e6c8, bottom: "pants", bottomColor: 0x6b5a3a, hat: 0xd8c27a } },
     ];
     // townsfolk who stroll between these spots and stop to chat
