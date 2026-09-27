@@ -835,20 +835,17 @@
 
   // ---------------- Sunken treasure all over the map ----------------
   const seaChests = [];
-  const chestGlowColor = 0xffd76b;
   for (let i = 0, tries = 0; seaChests.length < 55 && tries < 400; tries++) {
     const a = hash(tries, 301) * Math.PI * 2, d = 250 + hash(tries, 302) * 2000;
     const x = Math.cos(a) * d, z = Math.sin(a) * d;
     const h = seabedHeight(x, z);
     if (h > -10 || Math.hypot(x - ATLANTIS.x, z - ATLANTIS.z) < ATLANTIS.radius) continue;
     if (seaChests.some((c) => Math.hypot(c.x - x, c.z - z) < 90)) continue;
+    // half buried in the sand, no beacon: the treasure detector leads the way
     const mesh = ZMModels.buildChest();
     mesh.scale.setScalar(1.6);
-    mesh.position.set(x, h - 0.2, z);
-    mesh.rotation.set(0, hash(tries, 303) * 6, (hash(tries, 304) - 0.5) * 0.3);
-    const glow = ZMModels.glowSprite(chestGlowColor, 7);
-    glow.position.y = 2;
-    mesh.add(glow);
+    mesh.position.set(x, h - 1.7, z);
+    mesh.rotation.set((hash(tries, 306) - 0.5) * 0.35, hash(tries, 303) * 6, (hash(tries, 304) - 0.5) * 0.4);
     mesh.visible = false;
     mainScene.add(mesh);
     seaChests.push({ index: seaChests.length, x, y: h, z, mesh, reward: Math.round(20 + -h * 0.45 + hash(tries, 305) * 30) });
@@ -876,10 +873,8 @@
     const chest = ZMModels.buildChest();
     chest.scale.setScalar(2.2);
     const cx = x + 12, cz = z + 4;
-    chest.position.set(cx, seabedHeight(cx, cz) - 0.2, cz);
-    const glow = ZMModels.glowSprite(chestGlowColor, 9);
-    glow.position.y = 2;
-    chest.add(glow);
+    chest.position.set(cx, seabedHeight(cx, cz) - 1.8, cz);
+    chest.rotation.set(0.2, a, 0.25);
     chest.visible = false;
     mainScene.add(chest);
     wrecks.push(ship);
@@ -923,7 +918,7 @@
     const diving = state.mode === "dive";
     const cam = camera.position;
     seaChests.forEach((c) => {
-      c.mesh.visible = diving && !state.seaChests.has(c.index) && Math.hypot(c.x - cam.x, c.z - cam.z) < 260;
+      c.mesh.visible = diving && !state.seaChests.has(c.index) && Math.hypot(c.x - cam.x, c.z - cam.z) < 90;
     });
     wrecks.forEach((w) => (w.visible = diving && Math.hypot(w.position.x - cam.x, w.position.z - cam.z) < 320));
     atlantis.visible = diving && Math.hypot(ATLANTIS.x - cam.x, ATLANTIS.z - cam.z) < 650;
@@ -1496,7 +1491,7 @@
   const HINTS = {
     boat: "WASD: navegar · Ratón: apuntar · Clic: disparar · <b>R</b>: pescar · <b>F</b>: bucear aquí / desembarcar en isla · <b>J</b>: Bitácora",
     walk: "WASD / Flechas: caminar · Shift: correr · <b>F</b>: hablar, abrir cofres o subir al barco · <b>J</b>: Bitácora",
-    dive: "WASD: nadar · Flechas: mirar · Espacio/Shift: subir/bajar · Clic/<b>E</b>: arpón 🔱 · Busca cofres 🧰 y cuevas en las montañas · <b>F</b>: volver al barco · <b>J</b>: Bitácora",
+    dive: "WASD: nadar · Flechas: mirar · Espacio/Shift: subir/bajar · Clic/<b>E</b>: arpón 🔱 · 📡 El detector te guía a cofres enterrados 🧰 · Cuevas en las montañas · <b>F</b>: volver al barco · <b>J</b>: Bitácora",
     cave: "Usa el sonar: 🟡 tesoro · 🔵 salida · punto que late = criatura · Clic/<b>E</b>: arpón · WASD: nadar · Flechas: mirar · <b>F</b>: volver al barco",
   };
 
@@ -1752,17 +1747,51 @@
     render();
   }
 
-  function openPuzzle(title, intro, onSolved) {
+  // Riddles: a shuffled deck so the same one doesn't come back too soon.
+  let riddleDeck = [];
+  function renderRiddle(onSolved) {
+    if (!riddleDeck.length) riddleDeck = shuffleArray(RIDDLES.map((_, i) => i));
+    const r = RIDDLES[riddleDeck.pop()];
+    puzzleHint.textContent = "Adivina la respuesta: puedes intentarlo varias veces";
+    puzzleBody.innerHTML = `<div id="puzzle-question" class="riddle-question"></div><div class="math-choices riddle-choices"></div>`;
+    puzzleBody.querySelector("#puzzle-question").textContent = "🧩 " + r.q;
+    const choicesEl = puzzleBody.querySelector(".math-choices");
+    shuffleArray([r.a, ...r.o]).forEach((c) => {
+      const btn = document.createElement("button");
+      btn.className = "math-choice riddle-choice";
+      btn.textContent = c;
+      btn.addEventListener("click", () => {
+        if (c === r.a) {
+          btn.classList.add("correct");
+          setTimeout(onSolved, 450);
+        } else {
+          btn.classList.add("wrong");
+          btn.disabled = true;
+        }
+      });
+      choicesEl.appendChild(btn);
+    });
+  }
+
+  // opts.type: "riddle" | "math" | "slider" (random if omitted);
+  // opts.onCancel runs when the player leaves it for later.
+  let puzzleOnCancel = null;
+  function openPuzzle(title, intro, onSolved, opts) {
+    opts = opts || {};
     state.modalOpen = true;
     puzzleTitle.textContent = title;
     puzzleIntro.textContent = intro;
     puzzleModal.classList.remove("hidden");
+    puzzleOnCancel = opts.onCancel || null;
     const done = () => {
       puzzleModal.classList.add("hidden");
       state.modalOpen = false;
+      puzzleOnCancel = null;
       onSolved();
     };
-    if (Math.random() < 0.5) renderMathPuzzle(done);
+    const type = opts.type || ["riddle", "math", "slider"][Math.floor(Math.random() * 3)];
+    if (type === "riddle") renderRiddle(done);
+    else if (type === "math") renderMathPuzzle(done);
     else renderSliderPuzzle(done);
   }
 
@@ -1794,6 +1823,8 @@
   puzzleCancel.addEventListener("click", () => {
     puzzleModal.classList.add("hidden");
     state.modalOpen = false;
+    if (puzzleOnCancel) puzzleOnCancel();
+    puzzleOnCancel = null;
   });
 
   // ---------------- Save / load ----------------
@@ -2526,13 +2557,12 @@
     // sunken chests
     seaChests.forEach((c) => {
       if (state.seaChests.has(c.index)) return;
-      if (Math.hypot(camera.position.x - c.x, camera.position.y - c.y, camera.position.z - c.z) < 8) {
-        state.seaChests.add(c.index);
-        state.coins += c.reward;
-        refreshCounters();
-        showBanner(`${c.wreck ? "⚓ ¡Tesoro del naufragio!" : "🧰 ¡Cofre hundido!"} +${c.reward} 🪙`);
-        saveGame();
+      const d = Math.hypot(camera.position.x - c.x, camera.position.y - c.y, camera.position.z - c.z);
+      if (c.snooze) {
+        if (d > 16) c.snooze = false; // swim away and back to try again
+        return;
       }
+      if (d < 7) openSeaChest(c);
     });
     // mythic treasures of Atlantis
     mythics.forEach((m) => {
@@ -2543,6 +2573,47 @@
       if (Math.hypot(camera.position.x - a.x, camera.position.z - a.z) < 45) returnToBoat();
     }
     depthMeterEl.textContent = `⬇ ${Math.round(-camera.position.y)} m · límite ${diveDepthLimit()} m`;
+  }
+
+  // A buried chest opens only after answering its riddle.
+  function openSeaChest(c) {
+    const title = c.wreck ? "⚓ Cofre del naufragio" : "🧰 Cofre enterrado";
+    openPuzzle(title, "El cofre tiene una cerradura con una adivinanza grabada. ¿Cuál es la respuesta?", () => {
+      state.seaChests.add(c.index);
+      state.coins += c.reward;
+      state.oxygen = Math.min(state.maxOxygen, state.oxygen + 25);
+      refreshCounters();
+      showBanner(`${c.wreck ? "⚓ ¡Tesoro del naufragio!" : "🧰 ¡Cofre abierto!"} +${c.reward} 🪙`);
+      saveGame();
+    }, { type: "riddle", onCancel: () => (c.snooze = true) });
+  }
+
+  // Treasure detector: how close the nearest hidden chest is (dive: sunken
+  // chests; on an island: its buried chest).
+  const detectorEl = document.getElementById("detector");
+  function updateDetector() {
+    let d = Infinity;
+    const walking = state.mode === "walk";
+    if (state.mode === "dive") {
+      const c = camera.position;
+      seaChests.forEach((ch) => {
+        if (!state.seaChests.has(ch.index)) d = Math.min(d, Math.hypot(ch.x - c.x, ch.y - c.y, ch.z - c.z));
+      });
+    } else if (walking && state.island && state.island.chest && !state.chestsOpened.has(state.island.index)) {
+      d = Math.hypot(state.island.chest.x - player.pos.x, state.island.chest.z - player.pos.z);
+    }
+    const show = state.started && (state.mode === "dive" || walking) && d < Infinity;
+    detectorEl.classList.toggle("hidden", !show);
+    if (!show) return;
+    const scale = walking ? 0.25 : 1; // islands are small: tighter ranges
+    const text =
+      d > 150 * scale ? "📡 Detector: sin señal" :
+      d > 80 * scale ? "📡 ❄️ Frío" :
+      d > 40 * scale ? "📡 🌤 Tibio" :
+      d > 15 * scale ? "📡 🔥 Caliente" : "📡 🔥🔥 ¡Muy caliente! Está aquí";
+    if (detectorEl.textContent !== text) detectorEl.textContent = text;
+    detectorEl.classList.toggle("hot", d <= 40 * scale);
+    detectorEl.classList.toggle("walk", walking);
   }
 
   function updateCaveLogic(dt) {
@@ -4235,7 +4306,7 @@
 
   function walkInteract() {
     const t = walkTarget();
-    if (!t) showBanner(state.island.home ? "Busca a Doña Marisol, el mercado o el taller" : "Explora la isla: hay un cofre escondido 🧰");
+    if (!t) showBanner(state.island.home ? "Busca a Doña Marisol, el mercado o el taller" : "Hay un cofre enterrado en esta isla: sigue el detector 📡");
     else if (t.kind === "boat") exitWalk();
     else if (t.kind === "chest") openIslandChest(state.island);
     else if (t.kind === "missions") talkMarisol();
@@ -4246,11 +4317,14 @@
 
   function openIslandChest(isl) {
     const reward = 25 + Math.round(hash(isl.index, 5) * 35);
-    state.chestsOpened.add(isl.index);
-    state.coins += reward;
-    refreshCounters();
-    showBanner(`🧰 ¡Cofre del explorador! +${reward} 🪙`);
-    saveGame();
+    openPuzzle("🧰 Cofre del explorador", "Un viejo explorador dejó este cofre cerrado con una adivinanza:", () => {
+      state.chestsOpened.add(isl.index);
+      if (isl.chest) isl.chest.mesh.visible = false;
+      state.coins += reward;
+      refreshCounters();
+      showBanner(`🧰 ¡Cofre del explorador! +${reward} 🪙`);
+      saveGame();
+    }, { type: "riddle" });
   }
 
   function updateWalk(dt) {
@@ -4579,18 +4653,11 @@
       radarCtx.fillStyle = "#ffffff";
       radarCtx.fillRect(bx - 4, by - 4, 8, 8);
     } else if (diving) {
-      // sonar: boat above, nearby chests, cave mouths, the zone's creature
+      // sonar: boat above, cave mouths, the zone's creature
       const [bx, by] = toRadar(state.diveAnchor.x, state.diveAnchor.z);
       radarCtx.fillStyle = "#ffffff";
       radarCtx.fillRect(bx - 4, by - 4, 8, 8);
-      seaChests.forEach((c) => {
-        if (state.seaChests.has(c.index) || Math.hypot(c.x - originX, c.z - originZ) > 120) return;
-        const [px, py] = toRadar(c.x, c.z);
-        radarCtx.fillStyle = "#ffd76b";
-        radarCtx.beginPath();
-        radarCtx.arc(px, py, 3 + Math.sin(state.time * 6) * 0.8, 0, Math.PI * 2);
-        radarCtx.fill();
-      });
+      // buried chests are not on the sonar: the treasure detector points the way
       // danger: sharks and the Kraken
       sharks.forEach((sh) => {
         if (!sh.mesh.visible) return;
@@ -4814,6 +4881,7 @@
       depthMeterEl.classList.toggle("hidden", state.mode !== "dive" && state.mode !== "cave");
       updateBubbles(dt);
       updateUnderwaterLight(dt);
+      updateDetector();
       drawRadar();
       sky.position.copy(camera.position);
       updateSun(state.mode === "walk" ? player.pos : state.mode === "dive" ? camera.position : boat.position);

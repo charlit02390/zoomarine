@@ -93,6 +93,27 @@ html, body {
   pointer-events: none;
 }
 
+/* Treasure detector: cold / warm / hot as the explorer nears a hidden chest */
+#detector {
+  position: fixed;
+  top: 250px;
+  right: 18px;
+  z-index: 5;
+  background: rgba(0,10,20,0.6);
+  border: 1px solid rgba(255,215,107,0.4);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffe9a8;
+  pointer-events: none;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+#detector.hot { border-color: #ff8a3a; box-shadow: 0 0 12px rgba(255,138,58,0.6); }
+#detector.walk { top: 214px; }
+.riddle-question { font-size: 17px; line-height: 1.4; text-align: center; }
+.riddle-choice { font-size: 15px; }
+
 /* ---------------- Fishing ---------------- */
 #fishing-ui {
   position: fixed;
@@ -814,6 +835,8 @@ html, body {
   #save-toast { top: 42px; bottom: auto; right: max(12px, env(safe-area-inset-right, 0px)); }
   #radar { top: 42px; width: 110px; height: 110px; right: max(12px, env(safe-area-inset-right, 0px)); opacity: 0.9; }
   #depth-meter { top: 158px; right: max(12px, env(safe-area-inset-right, 0px)); font-size: 11px; }
+  #detector, #detector.walk { top: 186px; right: max(12px, env(safe-area-inset-right, 0px)); font-size: 11px; }
+  #detector.walk { top: 158px; }
   #fishing-ui { bottom: 150px; }
 }
 

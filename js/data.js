@@ -250,6 +250,32 @@ const SHARKS = {
 const KRAKEN = { health: 14, reward: 250, grab: 22,
   fact: "Las leyendas nórdicas hablan de un monstruo tan grande que los marineros lo confundían con una isla. Probablemente nació de avistamientos del calamar gigante." };
 
+// ---------------- Adivinanzas de los cofres ----------------
+// Cada cofre escondido pide resolver una. `a` es la respuesta; `o` son las
+// otras opciones (se mezclan al mostrarlas).
+const RIDDLES = [
+  { q: "Tengo ocho brazos y tres corazones; si me asustan, suelto tinta y me escondo.", a: "El pulpo", o: ["El cangrejo", "La medusa", "El delfín"] },
+  { q: "Camino de lado y llevo tenazas; si me molestas, ¡te pellizco con ganas!", a: "El cangrejo", o: ["La langosta", "El caracol", "La estrella de mar"] },
+  { q: "Llevo mi casa en la espalda, nado despacio y vuelvo a la playa donde nací para poner mis huevos.", a: "La tortuga marina", o: ["El caracol", "El cangrejo ermitaño", "La foca"] },
+  { q: "Soy transparente como un globo, no tengo cerebro y si me tocas, te pica mi velo.", a: "La medusa", o: ["El pulpo", "El calamar", "La burbuja"] },
+  { q: "Subo y bajo dos veces al día sin moverme de mi sitio: la Luna me llama.", a: "La marea", o: ["El ancla", "La ola", "El faro"] },
+  { q: "Tengo agujas pero no coso; vivo pegado a las rocas y soy redondo.", a: "El erizo de mar", o: ["El pez globo", "El coral", "La estrella de mar"] },
+  { q: "Soy estrella pero no brillo; vivo en el fondo y tengo cinco brazos.", a: "La estrella de mar", o: ["La estrella polar", "El erizo", "La anémona"] },
+  { q: "Nado de pie, enrosco mi cola y es el papá quien lleva a los bebés en su bolsa.", a: "El caballito de mar", o: ["El pez payaso", "La anguila", "El canguro"] },
+  { q: "Tengo agua pero no me mojo, tengo islas pero no hay tierra, tengo mares y ningún barco me navega.", a: "Un mapa", o: ["Una pecera", "Una botella", "Una nube"] },
+  { q: "Soy alto, vivo en la costa y de noche giro mi luz para que los barcos no choquen.", a: "El faro", o: ["La palmera", "La luna", "El volcán"] },
+  { q: "Si me tiran al mar, el barco se queda quieto.", a: "El ancla", o: ["La red", "La vela", "El timón"] },
+  { q: "Blanca y brillante, nací dentro de una ostra y todos me quieren como tesoro.", a: "La perla", o: ["La concha", "La sal", "El diamante"] },
+  { q: "Soy el animal más grande que ha existido y como bichitos más pequeños que una uña.", a: "La ballena azul", o: ["El tiburón blanco", "El calamar gigante", "El elefante"] },
+  { q: "Cuanto más grande soy, menos se ve. En el fondo del mar estoy por todas partes.", a: "La oscuridad", o: ["La arena", "El agua", "El silencio"] },
+  { q: "Tengo un ojo pero no veo; giro sobre el mar con viento y lluvia.", a: "El huracán", o: ["El remolino", "El tiburón", "El faro"] },
+  { q: "Vivo entre los tentáculos de la anémona y no me pican; soy naranja con rayas blancas.", a: "El pez payaso", o: ["El pez globo", "El pez espada", "El caballito de mar"] },
+  { q: "Me inflo como un balón y me lleno de espinas cuando tengo miedo.", a: "El pez globo", o: ["El erizo de mar", "La medusa", "El pulpo"] },
+  { q: "No soy planta ni piedra, pero formo arrecifes de colores donde viven miles de peces.", a: "El coral", o: ["El alga", "La arena", "La concha"] },
+  { q: "Salto fuera del agua, hablo con silbidos y cada uno tiene su propio nombre.", a: "El delfín", o: ["La ballena", "La foca", "El tiburón"] },
+  { q: "Me saludan con «¡pura vida!» y tengo costas en dos océanos. ¿Qué país soy?", a: "Costa Rica", o: ["Panamá", "Cuba", "México"] },
+];
+
 // ---------------- Habla tica ----------------
 // Saludos y charlas de la gente de Puerto Limón: español costarricense
 // (pura vida, mae, tuanis, diay, upe, qué chiva...) y un poco de mekatelyu,
