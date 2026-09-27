@@ -191,7 +191,8 @@ const ZMModels = (function () {
     const cTop = new THREE.Color(o.colors.top), cStripe = new THREE.Color(o.colors.stripe), cBottom = new THREE.Color(o.colors.bottom);
     for (let t = 0; t < p.count; t += 3) {
       const cy = (p.getY(t) + p.getY(t + 1) + p.getY(t + 2)) / 3;
-      const c = cy > 0.72 ? cTop : cy > 0.05 ? cStripe : cBottom;
+      const bands = o.bands || [0.72, 0.05];
+      const c = cy > bands[0] ? cTop : cy > bands[1] ? cStripe : cBottom;
       for (let j = 0; j < 3; j++) cols.push(c.r, c.g, c.b);
     }
     flat.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
@@ -222,8 +223,56 @@ const ZMModels = (function () {
     return g;
   }
 
-  // ---------------- Player boat: sport-fishing trawler ----------------
-  function buildBoat() {
+  // ---------------- Player boats ----------------
+  // Shared parts: the fishing rod (hidden until the player casts) and the
+  // bow cannon.
+  function makeFishingRod(x, y, z, len) {
+    const L = len || 6.5;
+    const fishingRod = new THREE.Group();
+    const rodMat = std(0x222222, { roughness: 0.4 });
+    fishingRod.add(rod(V3(0, 0, 0), V3(0, L, L * 0.43), 0.07, rodMat));
+    const reel = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.3, 10), std(0xd4a017, { metalness: 0.6, roughness: 0.3 }));
+    reel.rotation.z = Math.PI / 2;
+    reel.position.set(0, 0.9, 0.35);
+    fishingRod.add(reel);
+    const rodTip = new THREE.Object3D();
+    rodTip.position.set(0, L, L * 0.43);
+    fishingRod.add(rodTip);
+    fishingRod.position.set(x, y, z);
+    fishingRod.visible = false;
+    return { fishingRod, rodTip };
+  }
+  function makeCannon(scale) {
+    const cannonMat = std(0x2a2a2e, { roughness: 0.5, metalness: 0.4 });
+    const pivot = new THREE.Group();
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.42, 3.8, 12), cannonMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.5, -1.9);
+    pivot.add(barrel);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.9, 0.7, 12), cannonMat);
+    base.position.y = 0.2;
+    pivot.add(base);
+    pivot.scale.setScalar(scale || 1);
+    return pivot;
+  }
+  // Painted name on the hull: transparent text on a thin plane.
+  function hullName(text, w, h, color) {
+    const tex = textTexture(text, { w: 512, h: 128, bg: null, border: null, fg: color || "#1d3b6e", font: "italic bold 78px Georgia, serif" });
+    return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.4, depthWrite: false }));
+  }
+
+  // type: "fishing" | "catamaran" | "jetski" | "speedboat". Returns the model
+  // group, the parts the game drives (cannonPivot and radar may be null) and
+  // where the captain goes: seat { x, y, z, sit }.
+  function buildBoat(type) {
+    if (type === "catamaran") return buildCatamaran();
+    if (type === "jetski") return buildJetSki();
+    if (type === "speedboat") return buildSpeedboat();
+    return buildFishingBoat();
+  }
+
+  // Sport-fishing trawler: the starting boat.
+  function buildFishingBoat() {
     const boat = new THREE.Group();
     const white = std(0xf4f6f8, { roughness: 0.35 });
     const glass = std(0x0f2336, { roughness: 0.08, metalness: 0.7 });
@@ -236,12 +285,45 @@ const ZMModels = (function () {
       length: 21, beam: 7.6, deck: 2.1, bulwark: 0.55, keel: -1.8,
       colors: { top: 0xf6f8fa, stripe: 0x1d3b6e, bottom: 0xa3322a },
     });
-    const hullMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, side: THREE.DoubleSide });
+    const hullMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.26, metalness: 0.05, side: THREE.DoubleSide });
     boat.add(new THREE.Mesh(hullGeo, hullMat));
     const deck = new THREE.Mesh(deckGeometry(hullGeo, 0.25), teak);
     boat.add(deck);
     const { halfBeam, deckY } = hullGeo.userData;
     const uAt = (z) => (10.5 - z) / 21;
+
+    // name on both bows and the transom, portholes along the topsides
+    [-1, 1].forEach((s) => {
+      const n = hullName("Limón I", 3.6, 0.9);
+      const u = uAt(-3);
+      n.position.set(s * (halfBeam(u) + 0.06), 2.05, -3);
+      n.rotation.y = s * Math.PI / 2;
+      boat.add(n);
+      [0.5, 2.2, 3.9].forEach((z) => {
+        const uu = uAt(z);
+        const port = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.12, 14), glass);
+        port.rotation.z = Math.PI / 2;
+        port.position.set(s * (halfBeam(uu) + 0.02), 1.35, z);
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.06, 6, 14), chrome);
+        rim.rotation.y = Math.PI / 2;
+        rim.position.copy(port.position);
+        boat.add(port, rim);
+      });
+    });
+    const sternName = hullName("Limón I · Puerto Limón", 5.2, 0.8);
+    sternName.position.set(0, 1.9, 10.56);
+    boat.add(sternName);
+    // anchor hanging at the bow
+    const anchorMat = std(0x3a3f45, { roughness: 0.4, metalness: 0.7 });
+    const anchor = new THREE.Group();
+    anchor.add(rod(V3(0, 0, 0), V3(0, -1.2, 0), 0.08, anchorMat));
+    const arms = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.07, 6, 12, Math.PI), anchorMat);
+    arms.rotation.z = Math.PI;
+    arms.position.y = -0.95;
+    anchor.add(arms);
+    anchor.position.set(0.55, deckY(0.93) - 0.1, -9.1);
+    anchor.rotation.y = Math.PI / 2;
+    boat.add(anchor);
 
     // Wheelhouse
     const cabin = new THREE.Group();
@@ -345,38 +427,208 @@ const ZMModels = (function () {
     boat.add(crate);
 
     // Rod holders at the stern + the rod used when fishing
-    const fishingRod = new THREE.Group();
-    const rodMat = std(0x222222, { roughness: 0.4 });
-    fishingRod.add(rod(V3(0, 0, 0), V3(0, 6.5, 2.8), 0.07, rodMat));
-    const reel = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.3, 10), std(0xd4a017, { metalness: 0.6, roughness: 0.3 }));
-    reel.rotation.z = Math.PI / 2;
-    reel.position.set(0, 0.9, 0.35);
-    fishingRod.add(reel);
-    const rodTip = new THREE.Object3D();
-    rodTip.position.set(0, 6.5, 2.8);
-    fishingRod.add(rodTip);
-    fishingRod.position.set(2.6, deckY(0.05) + 0.3, 9);
-    fishingRod.visible = false;
+    const { fishingRod, rodTip } = makeFishingRod(2.6, deckY(0.05) + 0.3, 9);
     boat.add(fishingRod);
-    const holder = rod(V3(-2.6, deckY(0.05), 9), V3(-2.9, deckY(0.05) + 3.4, 10.4), 0.05, rodMat);
+    const holder = rod(V3(-2.6, deckY(0.05), 9), V3(-2.9, deckY(0.05) + 3.4, 10.4), 0.05, std(0x222222, { roughness: 0.4 }));
     boat.add(holder);
 
     // Cannon on the foredeck
-    const cannonMat = std(0x2a2a2e, { roughness: 0.5, metalness: 0.4 });
-    const cannonPivot = new THREE.Group();
+    const cannonPivot = makeCannon();
     cannonPivot.position.set(0, deckY(uAt(-5)) + 0.4, -5);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.42, 3.8, 12), cannonMat);
-    barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.5, -1.9);
-    cannonPivot.add(barrel);
-    const cannonBase = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.9, 0.7, 12), cannonMat);
-    cannonBase.position.y = 0.2;
-    cannonPivot.add(cannonBase);
     boat.add(cannonPivot);
 
     shadowed(boat);
     bake(boat, [cannonPivot, fishingRod, radar]);
-    return { group: boat, cannonPivot, fishingRod, rodTip, radar };
+    return { group: boat, cannonPivot, fishingRod, rodTip, radar, seat: { x: 0.8, y: 2.2, z: 5.2, sit: false } };
+  }
+
+  // Sailing catamaran: two slim hulls, a bridge deck with a cabin, a tall mast.
+  function buildCatamaran() {
+    const boat = new THREE.Group();
+    const white = std(0xf6f8fa, { roughness: 0.3 });
+    const glass = std(0x10263a, { roughness: 0.08, metalness: 0.7 });
+    const chrome = std(0xdfe6ee, { roughness: 0.25, metalness: 0.85 });
+    const teak = std(0xb98352, { roughness: 0.8 });
+    const hullMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.26, side: THREE.DoubleSide });
+    [-1, 1].forEach((s) => {
+      const hullGeo = hullGeometry({ length: 19, beam: 2.9, deck: 1.8, bulwark: 0.2, keel: -1.5, colors: { top: 0xf6f8fa, stripe: 0x2a9d8f, bottom: 0x264653 }, bands: [0.62, 0.02] });
+      const hull = new THREE.Mesh(hullGeo, hullMat);
+      hull.position.x = s * 4;
+      boat.add(hull);
+      const n = hullName("Brisa", 2.6, 0.7, "#2a9d8f");
+      n.position.set(s * 5.47, 1.55, -4);
+      n.rotation.y = s * Math.PI / 2;
+      boat.add(n);
+    });
+    // bridge deck + trampoline between the bows
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.45, 11), white);
+    bridge.position.set(0, 2.25, 2.2);
+    boat.add(bridge);
+    const deckTop = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.06, 4), teak);
+    deckTop.position.set(0, 2.5, 5.5);
+    boat.add(deckTop);
+    const net = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 5.5, 8, 8).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2f3a44, roughness: 0.9, transparent: true, opacity: 0.75, side: THREE.DoubleSide, wireframe: true }));
+    net.position.set(0, 2.2, -6);
+    boat.add(net);
+    boat.add(rod(V3(-3.2, 2.2, -8.8), V3(3.2, 2.2, -8.8), 0.1, chrome));
+    // cabin with a wrap-around window band
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(7.4, 2.1, 5.6), white);
+    cabin.position.set(0, 3.5, 1.2);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(7.48, 0.8, 5.68), glass);
+    band.position.set(0, 3.8, 1.2);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(8, 0.22, 6.4), white);
+    roof.position.set(0, 4.62, 1.4);
+    boat.add(cabin, band, roof);
+    // mast, boom and sails
+    const mastTop = V3(0, 22, -1.8);
+    boat.add(rod(V3(0, 4.7, -1.8), mastTop, 0.18, chrome));
+    boat.add(rod(V3(0, 5.6, -1.8), V3(0, 5.9, 7.2), 0.14, chrome));
+    [-1, 1].forEach((s) => boat.add(rod(mastTop, V3(s * 4.6, 2.5, -1.4), 0.03, chrome)));
+    boat.add(rod(mastTop, V3(0, 2.4, -9.2), 0.03, chrome));
+    const sailMat = std(0xfbfaf5, { roughness: 0.9, side: THREE.DoubleSide });
+    const main = new THREE.Mesh(triShape([[0, 0], [8.8, 0], [0.4, 15.8]]), sailMat);
+    main.rotation.y = -Math.PI / 2;
+    main.position.set(0.02, 6, -1.6);
+    const jib = new THREE.Mesh(triShape([[0, 0], [6.8, 0], [0, 14.5]]), sailMat);
+    jib.rotation.y = Math.PI / 2;
+    jib.position.set(-0.02, 3.2, -2.3);
+    boat.add(main, jib);
+    const stripeMat = std(0x2a9d8f, { roughness: 0.8, side: THREE.DoubleSide });
+    const sailStripe = new THREE.Mesh(triShape([[0, 0], [8.8, 0], [7.9, 1.2], [0, 1.2]]), stripeMat);
+    sailStripe.rotation.y = -Math.PI / 2;
+    sailStripe.position.set(0.04, 6.3, -1.6);
+    boat.add(sailStripe);
+
+    const { fishingRod, rodTip } = makeFishingRod(4.2, 2.5, 8.2);
+    boat.add(fishingRod);
+    const cannonPivot = makeCannon(0.85);
+    cannonPivot.position.set(0, 2.5, -3.2);
+    boat.add(cannonPivot);
+    shadowed(boat);
+    bake(boat, [cannonPivot, fishingRod]);
+    return { group: boat, cannonPivot, fishingRod, rodTip, radar: null, seat: { x: 2.4, y: 2.5, z: 5.2, sit: false } };
+  }
+
+  // Jet ski: small, low and nimble; the rider sits astride it. No cannon.
+  function buildJetSki() {
+    const boat = new THREE.Group();
+    const accent = std(0x1fa3d9, { roughness: 0.3, metalness: 0.1 });
+    const dark = std(0x23272e, { roughness: 0.6 });
+    const seatMat = std(0x15181c, { roughness: 0.9 });
+    const chrome = std(0xdfe6ee, { roughness: 0.25, metalness: 0.85 });
+    const hullGeo = hullGeometry({ length: 6.2, beam: 2.2, deck: 0.75, bulwark: 0.14, keel: -0.5, colors: { top: 0xf4f6f8, stripe: 0x1fa3d9, bottom: 0x23272e }, bands: [0.33, 0.15] });
+    boat.add(new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.25, side: THREE.DoubleSide })));
+    const foot = new THREE.Mesh(deckGeometry(hullGeo, 0.12), dark);
+    boat.add(foot);
+    // front cowling, seat, steering
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), accent);
+    hood.scale.set(0.95, 0.5, 1.6);
+    hood.position.set(0, 0.95, -1.35);
+    const seat = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), seatMat);
+    seat.scale.set(0.42, 0.3, 1.45);
+    seat.position.set(0, 1.28, 0.95);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 2.8), std(0xf4f6f8, { roughness: 0.3 }));
+    body.position.set(0, 1.0, 0.8);
+    const column = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.7, 0.34), dark);
+    column.position.set(0, 1.5, -0.35);
+    column.rotation.x = -0.55;
+    const bar = rod(V3(-0.75, 1.9, -0.18), V3(0.75, 1.9, -0.18), 0.05, chrome);
+    const grips = [-1, 1].map((sd) => {
+      const g = rod(V3(sd * 0.55, 1.9, -0.18), V3(sd * 0.8, 1.9, -0.18), 0.075, seatMat);
+      return g;
+    });
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.05), std(0x10263a, { roughness: 0.1, metalness: 0.6, transparent: true, opacity: 0.7 }));
+    screen.position.set(0, 1.85, -0.55);
+    screen.rotation.x = -0.6;
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.5, 12), dark);
+    nozzle.rotation.x = Math.PI / 2;
+    nozzle.position.set(0, 0.25, 3.2);
+    boat.add(hood, seat, body, column, bar, ...grips, screen, nozzle);
+    const n = hullName("Rayo", 1.4, 0.4, "#1fa3d9");
+    [-1, 1].forEach((sd) => {
+      const m = n.clone();
+      m.position.set(sd * 1.05, 0.62, -0.6);
+      m.rotation.y = sd * Math.PI / 2;
+      boat.add(m);
+    });
+    const { fishingRod, rodTip } = makeFishingRod(0.5, 1.35, 2.2, 4.2);
+    boat.add(fishingRod);
+    shadowed(boat);
+    bake(boat, [fishingRod]);
+    return { group: boat, cannonPivot: null, fishingRod, rodTip, radar: null, seat: { x: 0, y: 0.95, z: 1.05, sit: true } };
+  }
+
+  // Speedboat: long low hull, wraparound windscreen, twin outboards.
+  function buildSpeedboat() {
+    const boat = new THREE.Group();
+    const white = std(0xf8f8f8, { roughness: 0.28 });
+    const glass = std(0x10263a, { roughness: 0.08, metalness: 0.7, transparent: true, opacity: 0.75 });
+    const chrome = std(0xdfe6ee, { roughness: 0.25, metalness: 0.85 });
+    const cushion = std(0xeae2cf, { roughness: 0.9 });
+    const red = std(0xd62828, { roughness: 0.35 });
+    const dark = std(0x1b1f2a, { roughness: 0.4, metalness: 0.2 });
+    const hullGeo = hullGeometry({ length: 16, beam: 5.4, deck: 1.5, bulwark: 0.45, keel: -1.3, colors: { top: 0xf8f8f8, stripe: 0xd62828, bottom: 0x1b1f2a }, bands: [0.4, 0.0] });
+    boat.add(new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.22, metalness: 0.05, side: THREE.DoubleSide })));
+    boat.add(new THREE.Mesh(deckGeometry(hullGeo, 0.25), std(0xb98352, { roughness: 0.8 })));
+    const { halfBeam, deckY } = hullGeo.userData;
+    const uAt = (z) => (8 - z) / 16;
+    const y0 = deckY(uAt(0));
+    // bow sunpad and foredeck
+    const fore = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.35, 4.5), white);
+    fore.position.set(0, deckY(uAt(-4.5)) + 0.3, -4.3);
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.3, 3.2), cushion);
+    pad.position.set(0, deckY(uAt(-4.5)) + 0.6, -4.1);
+    // console with windscreen and wheel
+    const helm = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.1, 1.3), white);
+    helm.position.set(0, y0 + 0.55, -1.2);
+    const screenF = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.9, 0.08), glass);
+    screenF.position.set(0, y0 + 1.5, -1.55);
+    screenF.rotation.x = -0.55;
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.05, 6, 16), dark);
+    wheel.position.set(0.9, y0 + 1.25, -0.5);
+    wheel.rotation.x = -0.9;
+    // seats and rear bench
+    const seats = [-1, 1].map((sd) => {
+      const g = new THREE.Group();
+      const b = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 1.1), cushion);
+      b.position.y = 0.45;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.1, 0.3), cushion);
+      back.position.set(0, 1.0, 0.45);
+      g.add(b, back);
+      g.position.set(sd * 1.1, y0, 0.7);
+      return g;
+    });
+    const bench = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.6, 1.2), cushion);
+    bench.position.set(0, y0 + 0.4, 5.2);
+    const benchBack = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.9, 0.3), cushion);
+    benchBack.position.set(0, y0 + 0.85, 5.9);
+    // racing stripe on the topsides, name, rails
+    [-1, 1].forEach((sd) => {
+      const n = hullName("Barracuda", 3.4, 0.8, "#d62828");
+      n.position.set(sd * (halfBeam(uAt(-1.5)) + 0.07), 1.35, -1.5);
+      n.rotation.y = sd * Math.PI / 2;
+      boat.add(n);
+      boat.add(rod(V3(sd * (halfBeam(uAt(-6)) - 0.3), deckY(uAt(-6)) + 0.8, -6), V3(sd * (halfBeam(uAt(-1.5)) - 0.3), y0 + 0.8, -1.5), 0.04, chrome));
+    });
+    // twin outboard motors on the transom
+    [-1, 1].forEach((sd) => {
+      const cowl = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.3, 1.1), dark);
+      cowl.position.set(sd * 1.1, 1.9, 8.6);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.18, 1.12), red);
+      cap.position.set(sd * 1.1, 2.6, 8.6);
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.8, 0.5), dark);
+      leg.position.set(sd * 1.1, 0.6, 8.8);
+      boat.add(cowl, cap, leg);
+    });
+    boat.add(fore, pad, helm, screenF, wheel, ...seats, bench, benchBack);
+    const { fishingRod, rodTip } = makeFishingRod(2.0, y0 + 0.3, 6.6, 5.5);
+    boat.add(fishingRod);
+    const cannonPivot = makeCannon(0.55);
+    cannonPivot.position.set(0, deckY(uAt(-6.5)) + 0.45, -5.8);
+    boat.add(cannonPivot);
+    shadowed(boat);
+    bake(boat, [cannonPivot, fishingRod]);
+    return { group: boat, cannonPivot, fishingRod, rodTip, radar: null, seat: { x: 0.9, y: y0, z: 0.3, sit: false } };
   }
 
   // ---------------- Pirate ship: dark hull, two masts with black sails ----------------
@@ -1177,6 +1429,19 @@ const ZMModels = (function () {
     return g;
   }
 
+  // Seated pose (jet ski rider): thighs forward, shins down, hands forward on
+  // the handlebars. sit=false puts the figure back to standing.
+  function setSeated(p, sit) {
+    const u = p.userData;
+    u.seated = sit;
+    u.hipL.rotation.x = u.hipR.rotation.x = sit ? 1.45 : 0;
+    u.kneeL.rotation.x = u.kneeR.rotation.x = sit ? -1.35 : 0;
+    u.hipL.rotation.z = sit ? -0.18 : 0;
+    u.hipR.rotation.z = sit ? 0.18 : 0;
+    u.shL.rotation.x = u.shR.rotation.x = sit ? 1.1 : 0;
+    u.elL.rotation.x = u.elR.rotation.x = sit ? 0.35 : 0;
+  }
+
   // speed in world units/s (of the unscaled figure); the figure faces -z.
   function animatePerson(p, dt, speed, t) {
     const u = p.userData;
@@ -1944,6 +2209,7 @@ const ZMModels = (function () {
 
   return {
     buildBoat,
+    setSeated,
     buildPirateShip,
     buildFish,
     swimFish,

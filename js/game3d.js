@@ -31,9 +31,7 @@
   const BOAT_INVULN_TIME = 2.2;
 
   // Boat speed: after sailing forward non-stop for CRUISE_DELAY seconds the
-  // boat shifts into cruise mode and its top speed rises.
-  const BOAT_MAX_SPEED = 58;
-  const BOAT_CRUISE_SPEED = 96;
+  // boat shifts into cruise mode and its top speed rises (speeds per boat in BOATS).
   const CRUISE_DELAY = 10;
 
   // Islands
@@ -392,16 +390,39 @@
   mainScene.add(abyss);
 
   // ---------------- Boat ----------------
-  const boatModel = ZMModels.buildBoat();
-  const boat = boatModel.group;
-  const cannonPivot = boatModel.cannonPivot;
+  // `boat` is a container that stays put; the model inside it is swapped when
+  // the player changes boats in the Garaje Náutico.
+  const BOATS_BY_ID = {};
+  BOATS.forEach((b) => (BOATS_BY_ID[b.id] = b));
+  const boat = new THREE.Group();
+  mainScene.add(boat);
+  const boatModels = {};
+  let boatModel = null;
+  let cannonPivot = null;
+  let currentBoat = BOATS[0];
   // the marine biologist at the helm (hidden while walking on an island)
   const captain = ZMModels.buildPerson({ shirt: 0x2f8fd8, bottom: "shorts", bottomColor: 0xc8b48a, skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, hat: 0xe8d28a });
-  captain.position.set(0.8, 2.2, 5.2);
   boat.add(captain);
-  mainScene.add(boat);
+  function mountBoat(id) {
+    const def = BOATS_BY_ID[id] || BOATS[0];
+    if (boatModel) {
+      boat.remove(boatModel.group);
+      boatModel.fishingRod.visible = false;
+    }
+    boatModel = boatModels[def.id] || (boatModels[def.id] = ZMModels.buildBoat(def.id));
+    boat.add(boatModel.group);
+    cannonPivot = boatModel.cannonPivot;
+    currentBoat = def;
+    const seat = boatModel.seat;
+    captain.position.set(seat.x, seat.y, seat.z);
+    ZMModels.setSeated(captain, seat.sit);
+  }
+  mountBoat("fishing");
+  function boatRadius() {
+    return currentBoat.radius;
+  }
 
-  const boatState = { yaw: 0, speed: 0 };
+  const boatState = { yaw: 0, speed: 0, lean: 0 };
 
   // ---------------- Creature builder ----------------
   function buildCreature(color, scale) {
@@ -967,14 +988,16 @@
       const side = new THREE.Vector3(back.z, 0, -back.x);
       while (wakeAccumulator >= 1) {
         wakeAccumulator -= 1;
-        const spread = (Math.random() - 0.5) * 5;
-        const sx = boat.position.x + back.x * 9 + side.x * spread;
-        const sz = boat.position.z + back.z * 9 + side.z * spread;
-        emitWake(sx, sz, 1.2 + speed * 0.03, 1.6 + speed * 0.02);
+        const B = currentBoat, spread = (Math.random() - 0.5) * B.radius * 0.6;
+        const sx = boat.position.x + back.x * B.stern + side.x * spread;
+        const sz = boat.position.z + back.z * B.stern + side.z * spread;
+        const wk = Math.max(0.4, Math.min(1, B.radius / 8)); // small craft leave a narrower wake
+        emitWake(sx, sz, (1.2 + speed * 0.03) * wk, 1.6 + speed * 0.02);
         // bow spray, heavier in cruise mode
         if (Math.random() < 0.35 + (state.cruising ? 0.4 : 0)) {
           const s = Math.random() < 0.5 ? 1 : -1;
-          emitWake(boat.position.x - back.x * 11 + side.x * s * 3, boat.position.z - back.z * 11 + side.z * s * 3, 0.9, 0.9);
+          const bw = B.radius * 0.38;
+          emitWake(boat.position.x - back.x * B.bow + side.x * s * bw, boat.position.z - back.z * B.bow + side.z * s * bw, 0.9 * wk, 0.9);
         }
       }
     }
@@ -1198,6 +1221,8 @@
     seaChests: new Set(), // sunken chests already opened
     mythics: new Set(), // Atlantis treasures found
     whalesSeen: new Set(), // whale species sighted
+    boatType: "fishing",
+    boatsOwned: new Set(["fishing"]),
     krakenDefeated: false,
     harpoonCooldown: 0,
     diverInvuln: 0, // seconds of grace after a bite or a tentacle grab
@@ -1377,7 +1402,7 @@
   function updateTouchUI() {
     const diving = state.mode === "dive" || state.mode === "cave";
     vertButtonsEl.classList.toggle("hidden", !diving);
-    btnFireEl.classList.toggle("hidden", state.mode === "walk");
+    btnFireEl.classList.toggle("hidden", state.mode === "walk" || (state.mode === "boat" && !cannonPivot));
     btnFireEl.textContent = diving ? "🔱" : "💥";
     btnFireEl.setAttribute("aria-label", diving ? "Disparar arpón" : "Disparar cañón");
     btnFishEl.classList.toggle("hidden", state.mode !== "boat");
@@ -1496,7 +1521,9 @@
   };
 
   function updateHint() {
-    hintEl.innerHTML = HINTS[state.mode];
+    let h = HINTS[state.mode];
+    if (state.mode === "boat" && !cannonPivot) h = h.replace("Ratón: apuntar · Clic: disparar · ", "Sin cañón · ");
+    hintEl.innerHTML = h;
   }
 
   function showBanner(text) {
@@ -1849,6 +1876,8 @@
       seaChests: [...state.seaChests],
       mythics: [...state.mythics],
       whalesSeen: [...state.whalesSeen],
+      boatType: state.boatType,
+      boatsOwned: [...state.boatsOwned],
       krakenDefeated: state.krakenDefeated,
       atlantisKnown: state.atlantisKnown,
       playTime: state.playTime,
@@ -1866,6 +1895,8 @@
     if (state.mode !== "boat") returnToBoat();
     state.found.clear();
     state.treasureFound.clear();
+    state.boatsOwned = new Set(["fishing"]);
+    useBoat("fishing");
     state.health = state.maxHealth;
     state.oxygen = state.maxOxygen;
     state.won = false;
@@ -1910,12 +1941,14 @@
     }
     (data.found || []).forEach((id) => state.found.add(id));
     (data.treasureFound || []).forEach((i) => state.treasureFound.add(i));
+    (data.boatsOwned || []).forEach((id) => BOATS_BY_ID[id] && state.boatsOwned.add(id));
+    if (data.boatType && state.boatsOwned.has(data.boatType)) useBoat(data.boatType);
     state.health = Math.max(20, Math.min(state.maxHealth, data.health || state.maxHealth));
     state.playTime = data.playTime || 0;
     if (data.boat) {
       boat.position.set(data.boat.x || 0, 0, data.boat.z || 0);
       boatState.yaw = data.boat.yaw || 0;
-      resolveIslandCollision(boat.position, BOAT_COLLIDE_RADIUS);
+      resolveIslandCollision(boat.position, boatRadius());
     }
     state.coins = data.coins || 0;
     state.cooler = Array.isArray(data.cooler) ? data.cooler.filter((f) => FISH_BY_ID[f.id]) : [];
@@ -2205,7 +2238,8 @@
     }
 
     // Cruise mode: charge while sailing forward at speed, lose it when easing off.
-    if (throttle > 0.5 && boatState.speed > BOAT_MAX_SPEED * 0.6) {
+    const B = currentBoat;
+    if (throttle > 0.5 && boatState.speed > B.speed * 0.6) {
       state.cruiseTimer = Math.min(CRUISE_DELAY, state.cruiseTimer + dt);
     } else if (throttle <= 0.5) {
       state.cruiseTimer = Math.max(0, state.cruiseTimer - dt * 4);
@@ -2216,17 +2250,17 @@
     if (!state.cruising && state.cruiseTimer >= CRUISE_DELAY) state.cruiseTimer = CRUISE_DELAY * 0.5;
 
     const engine = UPGRADES.engine.speed[state.upgrades.engine];
-    const topSpeed = (state.cruising ? BOAT_CRUISE_SPEED : BOAT_MAX_SPEED) * engine;
-    boatState.speed += throttle * (state.cruising ? 60 : 46) * engine * dt;
+    const topSpeed = (state.cruising ? B.cruise : B.speed) * engine;
+    boatState.speed += throttle * B.accel * (state.cruising ? 1.3 : 1) * engine * dt;
     boatState.speed *= 0.985;
     // ease down (not snap) from cruise speed when it ends
-    const cap = Math.max(topSpeed, Math.min(boatState.speed, BOAT_CRUISE_SPEED * engine) - 30 * dt);
+    const cap = Math.max(topSpeed, Math.min(boatState.speed, B.cruise * engine) - 30 * dt);
     boatState.speed = Math.max(-24, Math.min(cap, boatState.speed));
-    boatState.yaw += turn * 1.2 * dt * (0.4 + Math.min(1, Math.abs(boatState.speed) / 14));
+    boatState.yaw += turn * B.turn * dt * (0.4 + Math.min(1, Math.abs(boatState.speed) / 14));
 
     forwardVec.set(-Math.sin(boatState.yaw), 0, -Math.cos(boatState.yaw));
     boat.position.addScaledVector(forwardVec, boatState.speed * dt);
-    if (resolveIslandCollision(boat.position, BOAT_COLLIDE_RADIUS)) {
+    if (resolveIslandCollision(boat.position, boatRadius())) {
       boatState.speed *= 0.4;
       state.cruiseTimer = 0;
       state.cruising = false;
@@ -2238,13 +2272,19 @@
     state.shoreBannerCooldown = Math.max(0, state.shoreBannerCooldown - dt);
 
     // ride the swell: height from the wave field, pitch/roll from bow-vs-stern and side samples
+    // (small boats sample the swell closer together, so they rock more;
+    // at speed the bow lifts onto the plane and the hull leans into turns)
     const bx = boat.position.x, bz = boat.position.z, t = state.time;
-    const hBow = waveHeight(bx + forwardVec.x * 8, bz + forwardVec.z * 8, t);
-    const hStern = waveHeight(bx - forwardVec.x * 8, bz - forwardVec.z * 8, t);
-    const hPort = waveHeight(bx - forwardVec.z * 3.5, bz + forwardVec.x * 3.5, t);
-    const hStar = waveHeight(bx + forwardVec.z * 3.5, bz - forwardVec.x * 3.5, t);
-    boat.position.y = (hBow + hStern) * 0.5 * 0.85 + 0.2;
-    boat.rotation.set((hBow - hStern) / 16, boatState.yaw, (hPort - hStar) / 7 * 0.6, "YXZ");
+    const half = Math.max(2.5, B.radius), beam = Math.max(1.2, B.radius * 0.44);
+    const hBow = waveHeight(bx + forwardVec.x * half, bz + forwardVec.z * half, t);
+    const hStern = waveHeight(bx - forwardVec.x * half, bz - forwardVec.z * half, t);
+    const hPort = waveHeight(bx - forwardVec.z * beam, bz + forwardVec.x * beam, t);
+    const hStar = waveHeight(bx + forwardVec.z * beam, bz - forwardVec.x * beam, t);
+    const steady = B.id === "catamaran" ? 0.45 : 1;
+    const speedK = Math.max(0, Math.min(1, boatState.speed / B.cruise));
+    boatState.lean += (turn * speedK * B.lean - boatState.lean) * Math.min(1, dt * 3);
+    boat.position.y = (hBow + hStern) * 0.5 * 0.85 + 0.2 + speedK * B.plane * 8;
+    boat.rotation.set(((hBow - hStern) / (half * 2)) * steady + speedK * B.plane, boatState.yaw, ((hPort - hStar) / (beam * 2)) * 0.6 * steady + boatState.lean, "YXZ");
 
     // wider field of view in cruise mode sells the speed
     const targetFov = BASE_FOV + (state.cruising ? 9 : 0);
@@ -2254,8 +2294,8 @@
     }
 
     // chase camera — pulled back a bit further so the higher top speed still reads well
-    const behind = forwardVec.clone().multiplyScalar(-32);
-    camDesired.copy(boat.position).add(behind).add(new THREE.Vector3(0, 13, 0));
+    const behind = forwardVec.clone().multiplyScalar(-B.cam[0]);
+    camDesired.copy(boat.position).add(behind).add(new THREE.Vector3(0, B.cam[1], 0));
     if (!camLookInit) {
       camera.position.copy(camDesired);
       camLookTarget.copy(boat.position);
@@ -2322,13 +2362,18 @@
     // Negated: increasing yaw turns the boat/cannon toward -X (see boat steering),
     // so a positive (rightward) aim input needs a negative yaw offset to match it.
     state.aimYaw = -aimInput * CANNON_MAX_ARC;
-    cannonPivot.rotation.y = state.aimYaw;
+    if (cannonPivot) cannonPivot.rotation.y = state.aimYaw;
     state.cannonCooldown = Math.max(0, state.cannonCooldown - dt);
   }
 
   function fireCannon() {
     if (!state.started || state.mode !== "boat" || state.modalOpen || state.journalOpen || state.won) return;
     if (state.cannonCooldown > 0) return;
+    if (!cannonPivot) {
+      if (state.shoreBannerCooldown <= 0) showBanner(`${currentBoat.name} no tiene cañón: ¡acelera y escapa!`);
+      state.shoreBannerCooldown = 2;
+      return;
+    }
     state.cannonCooldown = CANNON_COOLDOWN;
     const muzzleYaw = boatState.yaw + state.aimYaw;
     const origin = cannonPivot.localToWorld(new THREE.Vector3(0, 0.5, -3.9));
@@ -2432,7 +2477,7 @@
             break;
           }
         }
-      } else if (b.mesh.position.distanceTo(boat.position) < 9) {
+      } else if (b.mesh.position.distanceTo(boat.position) < boatRadius() + 1) {
         damageBoat(BOAT_HIT_DAMAGE);
         hit = true;
       }
@@ -2458,7 +2503,7 @@
   }
 
   function updateHealthUI() {
-    healthFill.style.width = state.health + "%";
+    healthFill.style.width = (state.health / state.maxHealth) * 100 + "%";
     healthFill.style.background =
       state.health < 30
         ? "linear-gradient(90deg, #ff3b3b, #ff8a5f)"
@@ -3537,7 +3582,7 @@
     const along = THREE.MathUtils.clamp(dx * hx + dz * hz, -m.length * 0.4, m.length * 0.4);
     const cx = p.x + hx * along, cz = p.z + hz * along;
     const ex = boat.position.x - cx, ez = boat.position.z - cz;
-    const d = Math.hypot(ex, ez), min = m.radius + BOAT_COLLIDE_RADIUS;
+    const d = Math.hypot(ex, ez), min = m.radius + boatRadius();
     if (d < min && d > 0.001) {
       boat.position.x = cx + (ex / d) * min;
       boat.position.z = cz + (ez / d) * min;
@@ -4306,12 +4351,13 @@
 
   function walkInteract() {
     const t = walkTarget();
-    if (!t) showBanner(state.island.home ? "Busca a Doña Marisol, el mercado o el taller" : "Hay un cofre enterrado en esta isla: sigue el detector 📡");
+    if (!t) showBanner(state.island.home ? "Busca a Doña Marisol, el mercado, el taller o el garaje de barcos" : "Hay un cofre enterrado en esta isla: sigue el detector 📡");
     else if (t.kind === "boat") exitWalk();
     else if (t.kind === "chest") openIslandChest(state.island);
     else if (t.kind === "missions") talkMarisol();
     else if (t.kind === "market") talkMarket();
     else if (t.kind === "shop") talkShop();
+    else if (t.kind === "garage") talkGarage();
     else if (t.kind === "legend") talkChema();
   }
 
@@ -4544,6 +4590,58 @@
     refreshCounters();
     saveGame();
     talkShop();
+  }
+
+  // ---------------- Garaje Náutico: buy and switch boats ----------------
+  // Switching keeps the hull's damage as a share of its strength.
+  function useBoat(id) {
+    const def = BOATS_BY_ID[id] || BOATS[0];
+    const ratio = state.maxHealth ? state.health / state.maxHealth : 1;
+    stopFishing();
+    mountBoat(def.id);
+    state.boatType = def.id;
+    state.maxHealth = def.health;
+    state.health = Math.max(1, Math.round(def.health * Math.min(1, ratio)));
+    updateTouchUI();
+    updateHint();
+  }
+
+  function statBar(label, value, max) {
+    const pct = Math.round(Math.min(1, value / max) * 100);
+    return `<div class="boat-stat"><span>${label}</span><div class="boat-stat-bar"><div style="width:${pct}%"></div></div></div>`;
+  }
+
+  function talkGarage() {
+    const rows = BOATS.map((b) => {
+      const owned = state.boatsOwned.has(b.id);
+      const inUse = state.boatType === b.id;
+      const action = inUse
+        ? `<span class="shop-max">En uso ✔</span>`
+        : owned
+          ? `<button class="shop-buy" data-boat="${b.id}" data-act="use">Usar este<br>barco</button>`
+          : `<button class="shop-buy" data-boat="${b.id}" data-act="buy" ${state.coins < b.cost ? "disabled" : ""}>Comprar<br>${b.cost} 🪙</button>`;
+      const stats =
+        statBar("Velocidad", b.cruise, 132) + statBar("Aceleración", b.accel, 85) + statBar("Giro", b.turn, 2.3) + statBar("Casco", b.health, 160);
+      return `<div class="shop-row boat-row"><div><b>${b.icon} ${b.name}</b>${b.cannon ? "" : " · <small>sin cañón</small>"}<br><small>${b.desc}</small>${stats}</div>${action}</div>`;
+    }).join("");
+    openDialog("🚤 Garaje Náutico", `<p>Tienes <b>${state.coins} 🪙</b>. Compra un barco nuevo o cambia el que usas; te lo dejamos listo en el muelle.</p>${rows}`, [{ label: "Salir", primary: true }]);
+    dialogBody.querySelectorAll(".shop-buy").forEach((btn) => btn.addEventListener("click", () => garageAction(btn.dataset.boat, btn.dataset.act)));
+  }
+
+  function garageAction(id, act) {
+    const b = BOATS_BY_ID[id];
+    if (!b) return;
+    if (act === "buy") {
+      if (state.boatsOwned.has(id) || state.coins < b.cost) return;
+      state.coins -= b.cost;
+      state.boatsOwned.add(id);
+      showBanner(`🎉 ¡Compraste ${b.name}!`);
+    } else showBanner(`${b.icon} ${b.name} te espera en el muelle`);
+    useBoat(id);
+    moorAtHome();
+    refreshCounters();
+    saveGame();
+    talkGarage();
   }
 
   function updateMissionUI() {
@@ -4847,7 +4945,7 @@
       updateSchools(dt);
       updateWhales(dt);
       clouds.rotation.y += dt * 0.002;
-      boatModel.radar.rotation.y += dt * 2.5;
+      if (boatModel.radar) boatModel.radar.rotation.y += dt * 2.5;
 
       if (!state.started) {
         // Start screen: let the boat drift slowly so the sea behind the menu is alive.
