@@ -1505,6 +1505,7 @@
   const fishingBarsEl = document.getElementById("fishing-bars");
   const catchCard = document.getElementById("catch-card");
   const dialogModal = document.getElementById("dialog-modal");
+  const dialogBox = dialogModal.querySelector(".dialog-box");
   const dialogTitle = document.getElementById("dialog-title");
   const dialogBody = document.getElementById("dialog-body");
   const dialogActions = document.getElementById("dialog-actions");
@@ -4441,8 +4442,10 @@
   }
 
   // ---------------- Dialogs: missions, market, workshop ----------------
-  function openDialog(title, html, actions) {
+  // opts.wide: a wider window (the garage's boat cards)
+  function openDialog(title, html, actions, opts) {
     state.modalOpen = true;
+    dialogBox.classList.toggle("wide", !!(opts && opts.wide));
     dialogTitle.textContent = title;
     dialogBody.innerHTML = html;
     dialogActions.innerHTML = "";
@@ -4457,6 +4460,7 @@
       dialogActions.appendChild(b);
     });
     dialogModal.classList.remove("hidden");
+    dialogBody.scrollTop = 0;
   }
 
   function closeDialog() {
@@ -4612,19 +4616,30 @@
   }
 
   function talkGarage() {
-    const rows = BOATS.map((b) => {
+    const cards = BOATS.map((b) => {
       const owned = state.boatsOwned.has(b.id);
       const inUse = state.boatType === b.id;
       const action = inUse
-        ? `<span class="shop-max">En uso ✔</span>`
+        ? `<div class="boat-in-use">En uso ✔</div>`
         : owned
-          ? `<button class="shop-buy" data-boat="${b.id}" data-act="use">Usar este<br>barco</button>`
-          : `<button class="shop-buy" data-boat="${b.id}" data-act="buy" ${state.coins < b.cost ? "disabled" : ""}>Comprar<br>${b.cost} 🪙</button>`;
+          ? `<button class="shop-buy boat-btn" data-boat="${b.id}" data-act="use">Usar este barco</button>`
+          : `<button class="shop-buy boat-btn" data-boat="${b.id}" data-act="buy" ${state.coins < b.cost ? "disabled" : ""}>Comprar · ${b.cost} 🪙</button>`;
       const stats =
         statBar("Velocidad", b.cruise, 132) + statBar("Aceleración", b.accel, 85) + statBar("Giro", b.turn, 2.3) + statBar("Casco", b.health, 160);
-      return `<div class="shop-row boat-row"><div><b>${b.icon} ${b.name}</b>${b.cannon ? "" : " · <small>sin cañón</small>"}<br><small>${b.desc}</small>${stats}</div>${action}</div>`;
+      return `<div class="boat-card${inUse ? " in-use" : ""}">
+        <div class="boat-card-head"><span class="boat-icon">${b.icon}</span><b>${b.name}</b></div>
+        ${b.cannon ? "" : `<div class="boat-tag">sin cañón</div>`}
+        <p class="boat-desc">${b.desc}</p>
+        <div class="boat-stats">${stats}</div>
+        ${action}
+      </div>`;
     }).join("");
-    openDialog("🚤 Garaje Náutico", `<p>Tienes <b>${state.coins} 🪙</b>. Compra un barco nuevo o cambia el que usas; te lo dejamos listo en el muelle.</p>${rows}`, [{ label: "Salir", primary: true }]);
+    openDialog(
+      "🚤 Garaje Náutico",
+      `<p>Tienes <b>${state.coins} 🪙</b>. Compra un barco o cambia el que usas; te lo dejamos listo en el muelle.</p><div class="boat-grid">${cards}</div>`,
+      [{ label: "Salir", primary: true }],
+      { wide: true }
+    );
     dialogBody.querySelectorAll(".shop-buy").forEach((btn) => btn.addEventListener("click", () => garageAction(btn.dataset.boat, btn.dataset.act)));
   }
 
