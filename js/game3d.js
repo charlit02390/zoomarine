@@ -884,7 +884,7 @@
     let x = Math.cos(a) * d, z = Math.sin(a) * d;
     const h = seabedHeight(x, z);
     if (h > -30) return;
-    const ship = ZMModels.buildPirateShip();
+    const ship = ZMModels.buildPirateShip({ wreck: true });
     ship.traverse((o) => {
       if (o.isMesh && o.material && o.material.color) {
         o.material = o.material.clone();

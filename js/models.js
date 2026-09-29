@@ -671,7 +671,9 @@ const ZMModels = (function () {
     return g;
   }
 
-  function buildPirateShip() {
+  // opts.wreck: casco hundido (colores apagados y verdosos)
+  function buildPirateShip(opts) {
+    opts = opts || {};
     const g = new THREE.Group();
     const hullGeo = hullGeometry({
       length: 19, beam: 6.8, deck: 2.2, bulwark: 0.9, keel: -1.6,
@@ -715,7 +717,27 @@ const ZMModels = (function () {
     shadowed(g);
     g.userData.hullMat = hullMat;
     g.userData.flag = flag;
-    return g;
+    // carabela de Quaternius: velas negras para los piratas; el destello al
+    // recibir un disparo pasa al casco (DarkWood)
+    return useGltf(g, "caravel", {
+      length: 26,
+      onSwap: (inst) => {
+        inst.rotation.y = Math.PI / 2; // proa de +x a -z
+        inst.position.y = -1.6 + inst.userData.size.y / 2 - 1.2;
+        const algae = new THREE.Color(0x3a5a4a);
+        const done = new Set(); // varias mallas comparten material
+        inst.traverse((o) => {
+          if (!o.isMesh) return;
+          o.castShadow = true;
+          const m = o.material;
+          if (done.has(m)) return;
+          done.add(m);
+          if (opts.wreck) m.color.multiplyScalar(0.55).lerp(algae, 0.3);
+          else if (m.name === "Fabric") m.color.set(0x1c1c1e);
+          if (m.name === "DarkWood") g.userData.hullMat = m;
+        });
+      },
+    });
   }
 
   // ---------------- Fish ----------------

@@ -3,6 +3,7 @@
 ## CC0 (dominio público, sin crédito obligatorio)
 - `fish.glb`, `manta.glb` — Quaternius, Animated Fish Pack (quaternius.com), versión ajustada de OmarOzalp/scubago.
 - `tuna.glb`, `swordfish.glb` — Quaternius (vía poly.pizza).
+- `caravel.glb` — Quaternius, Ships ("Sail ship"), convertido de OBJ con obj2gltf.
 - `kenney/*` — Kenney, Watercraft Kit (kenney.nl). Ver `kenney/License.txt`.
 
 ## CC BY 4.0 (hay que dar crédito en el juego)

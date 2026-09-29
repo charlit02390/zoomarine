@@ -15,6 +15,8 @@ const ZMGltf = (function () {
     whale: { url: "models/blue-whale.glb", yaw: Math.PI / 2, length: 2, clip: "" },
     jetski: { url: "models/jetski.glb", yaw: Math.PI / 2, length: 1 },
     speedboat: { url: "models/speedboat.glb", yaw: Math.PI / 2, length: 1 },
+    // Quaternius Ships: la carabela de los piratas y los naufragios
+    caravel: { url: "models/caravel.glb", yaw: Math.PI / 2, length: 1 },
     // Kenney Watercraft Kit: barcos amarrados en Puerto Limón
     kFishing: { url: "models/kenney/boat-fishing-small.glb", yaw: Math.PI / 2, length: 12 },
     kSail: { url: "models/kenney/boat-sail-a.glb", yaw: Math.PI / 2, length: 11 },
@@ -94,9 +96,14 @@ const ZMGltf = (function () {
         def.url,
         (gltf) => {
           const scene = gltf.scene;
+          // un material puede estar en varias mallas: corregirlo una sola vez
+          const fixed = new Set();
           scene.traverse((o) => {
             if (!o.isMesh) return;
-            (Array.isArray(o.material) ? o.material : [o.material]).forEach(fixMaterial);
+            (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
+              if (!fixed.has(m)) fixMaterial(m);
+              fixed.add(m);
+            });
           });
           // orientar y medir en la pose inicial de la animación
           const clip = def.clip !== undefined ? gltf.animations.find((a) => a.name.endsWith(def.clip) && def.clip) || gltf.animations[0] : null;

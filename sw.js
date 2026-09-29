@@ -2,7 +2,7 @@
 // Estrategia "red primero": con conexión siempre baja la versión más nueva
 // (saltándose la caché HTTP de GitHub Pages) y la guarda; sin conexión usa la
 // copia guardada. Si cambias la lista de archivos, sube CACHE_VERSION.
-const CACHE_VERSION = 'zoomarine-v11';
+const CACHE_VERSION = 'zoomarine-v12';
 
 const PRECACHE = [
   './',
@@ -26,6 +26,7 @@ const PRECACHE = [
   'models/blue-whale.glb',
   'models/jetski.glb',
   'models/speedboat.glb',
+  'models/caravel.glb',
   'models/kenney/boat-fishing-small.glb',
   'models/kenney/boat-tug-a.glb',
   'models/kenney/boat-sail-a.glb',
