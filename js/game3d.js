@@ -4161,7 +4161,8 @@
     islands.forEach((isl) => {
       const near = !diving && Math.hypot(c.x - isl.x, c.z - isl.z) < 650 + isl.r;
       const kids = isl.mesh.children;
-      for (let i = 1; i < kids.length; i++) kids[i].visible = near;
+      // the code-built vegetation stays hidden once its glTF version is planted
+      for (let i = 1; i < kids.length; i++) kids[i].visible = near && !(isl.vegPlanted && kids[i] === isl.vegGroup);
     });
     const town = !diving && Math.hypot(c.x - homeIsland.x, c.z - homeIsland.z) < 450;
     people.forEach((p) => {

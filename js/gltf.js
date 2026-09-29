@@ -240,5 +240,107 @@ const ZMGltf = (function () {
     return Promise.all(keys.map(load));
   }
 
-  return { DEFS, load, preload, instance, attach, animate, measure };
+  // ---------------- Vegetación y rocas (Ultimate Stylized Nature, CC0) ----------------
+  // Cada archivo trae varias variantes (un nodo raíz por variante). Se dibujan
+  // con InstancedMesh: una llamada por pieza (tronco, hojas...) para todas las
+  // plantas de una isla.
+  const NATURE = {
+    palm: "models/nature/palms.glb",
+    pine: "models/nature/pines.glb",
+    rock: "models/nature/rocks.glb",
+    bush: "models/nature/bushes.glb",
+  };
+  const natureCache = {};
+  function loadNature(kind) {
+    if (natureCache[kind]) return natureCache[kind];
+    return (natureCache[kind] = new Promise((resolve) => {
+      if (!loader || !NATURE[kind]) return resolve(null);
+      loader.load(
+        NATURE[kind],
+        (gltf) => {
+          const fixed = new Set();
+          gltf.scene.updateMatrixWorld(true);
+          const variants = gltf.scene.children.map((node) => {
+            const box = measure(node);
+            const size = box.getSize(new THREE.Vector3());
+            const c = box.getCenter(new THREE.Vector3());
+            // base de la planta en el origen
+            const base = new THREE.Matrix4().makeTranslation(-c.x, -box.min.y, -c.z);
+            const parts = [];
+            node.traverse((o) => {
+              if (!o.isMesh) return;
+              const m = o.material;
+              if (!fixed.has(m)) {
+                fixMaterial(m);
+                if (/Leaves|Flowers/.test(m.name)) {
+                  // hojas recortadas, sin ordenar transparencias
+                  m.transparent = false;
+                  m.alphaTest = 0.5;
+                  m.side = THREE.DoubleSide;
+                }
+                fixed.add(m);
+              }
+              parts.push({ geometry: o.geometry, material: m, matrix: base.clone().multiply(o.matrixWorld) });
+            });
+            return { parts, height: size.y, width: Math.max(size.x, size.z) };
+          });
+          resolve(variants);
+        },
+        undefined,
+        () => resolve(null)
+      );
+    }));
+  }
+
+  // Planta `kind` en `parent` (coordenadas locales). items: [{ x, y, z, rotY,
+  // height y/o width, variant }]; con los dos, cabe en esa caja. opts.colors
+  // multiplica el color de materiales por nombre: { Rock: [r, g, b] }.
+  // Devuelve una promesa con el grupo añadido, o null si el modelo no cargó.
+  const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _pos = new THREE.Vector3(), _scl = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
+  function plant(parent, kind, items, opts) {
+    opts = opts || {};
+    return loadNature(kind).then((variants) => {
+      if (!variants || !items.length) return null;
+      const group = new THREE.Group();
+      variants.forEach((v, vi) => {
+        const mine = items.filter((it) => it.variant % variants.length === vi);
+        if (!mine.length) return;
+        v.parts.forEach((part) => {
+          let material = part.material;
+          const rgb = opts.colors && opts.colors[material.name];
+          if (rgb) {
+            material = material.clone();
+            material.color.setRGB(rgb[0], rgb[1], rgb[2]);
+          }
+          // geometría propia que reusa los mismos búferes: three r128 recorta un
+          // InstancedMesh con la esfera de la geometría, y aquí tiene que
+          // abarcar todas las plantas de la isla
+          const geo = new THREE.BufferGeometry();
+          for (const name in part.geometry.attributes) geo.setAttribute(name, part.geometry.attributes[name]);
+          geo.setIndex(part.geometry.index);
+          const im = new THREE.InstancedMesh(geo, material, mine.length);
+          const box = new THREE.Box3();
+          let reach = 0;
+          mine.forEach((it, i) => {
+            const k = Math.min(it.height ? it.height / v.height : Infinity, it.width ? it.width / v.width : Infinity);
+            _pos.set(it.x, it.y, it.z);
+            _q.setFromAxisAngle(_up, it.rotY || 0);
+            _scl.setScalar(k);
+            _m4.compose(_pos, _q, _scl).multiply(part.matrix);
+            im.setMatrixAt(i, _m4);
+            box.expandByPoint(_pos);
+            reach = Math.max(reach, k * Math.max(v.height, v.width));
+          });
+          geo.boundingSphere = box.expandByScalar(reach).getBoundingSphere(new THREE.Sphere());
+          im.castShadow = true;
+          im.receiveShadow = kind === "rock";
+          group.add(im);
+        });
+      });
+      parent.add(group);
+      return group;
+    });
+  }
+
+  return { DEFS, load, preload, instance, attach, animate, measure, plant };
 })();

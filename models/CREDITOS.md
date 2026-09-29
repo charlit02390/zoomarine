@@ -3,6 +3,8 @@
 ## CC0 (dominio público, sin crédito obligatorio)
 - `fish.glb`, `manta.glb` — Quaternius, Animated Fish Pack (quaternius.com), versión ajustada de OmarOzalp/scubago.
 - `tuna.glb`, `swordfish.glb` — Quaternius (vía poly.pizza).
+- `nature/palms.glb`, `pines.glb`, `rocks.glb`, `bushes.glb` — Quaternius, Ultimate Stylized Nature
+  (palmeras, pinos y rocas convertidos de OBJ con sus texturas; arbustos del glTF original).
 - `caravel.glb` — Quaternius, Ships ("Sail ship"), convertido de OBJ con obj2gltf.
 - `kenney/*` — Kenney, Watercraft Kit (kenney.nl). Ver `kenney/License.txt`.
 
