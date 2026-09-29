@@ -408,26 +408,26 @@ const ZMIslands = (function () {
     );
     // NPCs that stay at their post: where they stand, which way they face, how they look
     isl.npcs = [
-      { id: "marisol", x: isl.x + 6, z: isl.z + 59, ry: Math.PI, look: { female: true, skin: 0x6b4226, hair: "bun", hairColor: 0x8a8a8a, shirt: 0xe8484a, bottom: "skirt", bottomColor: 0xf2c94c } },
-      { id: "fishmonger", x: isl.x + 38, z: isl.z + 62.8, ry: Math.PI, look: { skin: 0x4a2e1a, hair: "short", hairColor: 0x111111, shirt: 0xffffff, bottom: "pants", bottomColor: 0x2b3440, hat: 0xe8d28a } },
-      { id: "mechanic", x: isl.x - 30, z: isl.z + 62, ry: lookTo(-30, 62, 0, 80), look: { skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, beard: 0x3a2412, shirt: 0x2b4a6f, bottom: "pants", bottomColor: 0x2b4a6f, hat: 0xff8a2a, hatStyle: "cap" } },
-      { id: "boatwright", x: isl.x - 10.5, z: isl.z + 65, ry: lookTo(-10.5, 65, 0, 55), look: { female: true, skin: 0x8a5a3a, hair: "long", hairColor: 0x1a1210, shirt: 0xf4f4f4, bottom: "pants", bottomColor: 0x1d3b6e, hat: 0x1d3b6e, hatStyle: "cap" } },
-      { id: "chema", x: isl.x + 27, z: isl.z + 74, ry: lookTo(27, 74, 18, 66), look: { skin: 0x5a3a22, hair: "bald", beard: 0xdedede, hairColor: 0xdedede, shirt: 0xf2e6c8, bottom: "pants", bottomColor: 0x6b5a3a, hat: 0xd8c27a } },
+      { id: "marisol", x: isl.x + 6, z: isl.z + 59, ry: Math.PI, look: { model: "w-formal", female: true, skin: 0x6b4226, hair: "bun", hairColor: 0x8a8a8a, shirt: 0xe8484a, bottom: "skirt", bottomColor: 0xf2c94c } },
+      { id: "fishmonger", x: isl.x + 38, z: isl.z + 62.8, ry: Math.PI, look: { model: "m-farmer", skin: 0x4a2e1a, hair: "short", hairColor: 0x111111, shirt: 0xffffff, bottom: "pants", bottomColor: 0x2b3440, hat: 0xe8d28a } },
+      { id: "mechanic", x: isl.x - 30, z: isl.z + 62, ry: lookTo(-30, 62, 0, 80), look: { model: "m-worker", skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, beard: 0x3a2412, shirt: 0x2b4a6f, bottom: "pants", bottomColor: 0x2b4a6f, hat: 0xff8a2a, hatStyle: "cap" } },
+      { id: "boatwright", x: isl.x - 10.5, z: isl.z + 65, ry: lookTo(-10.5, 65, 0, 55), look: { model: "w-worker", female: true, skin: 0x8a5a3a, hair: "long", hairColor: 0x1a1210, shirt: 0xf4f4f4, bottom: "pants", bottomColor: 0x1d3b6e, hat: 0x1d3b6e, hatStyle: "cap" } },
+      { id: "chema", x: isl.x + 27, z: isl.z + 74, ry: lookTo(27, 74, 18, 66), look: { model: "m-casual-2", skin: 0x5a3a22, hair: "bald", beard: 0xdedede, hairColor: 0xdedede, shirt: 0xf2e6c8, bottom: "pants", bottomColor: 0x6b5a3a, hat: 0xd8c27a } },
     ];
     // townsfolk who stroll between these spots and stop to chat
     isl.waypoints = [[0, 30], [8, 42], [38, 74], [12, 66], [22, 70], [-50, 32], [-40, -4], [-12, -32], [20, -34], [46, -8], [52, 34], [4, 8], [-28, 38], [-18, 52]].map(([x, z]) => ({ x: isl.x + x, z: isl.z + z }));
     isl.walkers = [
-      { female: true, skin: 0x8a5a3a, hair: "braids", hairColor: 0x111111, shirt: 0x7ed957, bottom: "skirt", bottomColor: 0x3b5a8a },
-      { skin: 0x5a3a22, hair: "afro", hairColor: 0x111111, shirt: 0xffb347, bottom: "shorts", bottomColor: 0xe0d0a0 },
-      { female: true, skin: 0xd9a57a, hair: "long", hairColor: 0x3a2412, shirt: 0x54c6eb, bottom: "pants", bottomColor: 0xf4f4f4 },
-      { skin: 0x6a4228, hair: "short", hairColor: 0x111111, shirt: 0xffd84a, bottom: "shorts", bottomColor: 0x2f7d4f, hat: 0xc8302c, hatStyle: "cap" },
+      { model: "w-adventurer", female: true, skin: 0x8a5a3a, hair: "braids", hairColor: 0x111111, shirt: 0x7ed957, bottom: "skirt", bottomColor: 0x3b5a8a },
+      { model: "m-beach", skin: 0x5a3a22, hair: "afro", hairColor: 0x111111, shirt: 0xffb347, bottom: "shorts", bottomColor: 0xe0d0a0 },
+      { model: "w-casual", female: true, skin: 0xd9a57a, hair: "long", hairColor: 0x3a2412, shirt: 0x54c6eb, bottom: "pants", bottomColor: 0xf4f4f4 },
+      { model: "m-casual-hoodie", skin: 0x6a4228, hair: "short", hairColor: 0x111111, shirt: 0xffd84a, bottom: "shorts", bottomColor: 0x2f7d4f, hat: 0xc8302c, hatStyle: "cap" },
     ];
     // kids playing the mejenga: two teams of two
     isl.kids = [
-      { team: 0, look: { kid: true, skin: 0x5a3a22, hair: "curly", hairColor: 0x111111, shirt: 0xe8484a, bottomColor: 0xffffff } },
-      { team: 0, look: { kid: true, female: true, skin: 0xc68a5e, hair: "bun", hairColor: 0x2a1a10, shirt: 0xe8484a, bottomColor: 0xffffff } },
-      { team: 1, look: { kid: true, skin: 0x8a5a3a, hair: "short", hairColor: 0x111111, shirt: 0x2f9d4f, bottomColor: 0x1d3b6e } },
-      { team: 1, look: { kid: true, female: true, skin: 0x4a2e1a, hair: "braids", hairColor: 0x111111, shirt: 0x2f9d4f, bottomColor: 0x1d3b6e } },
+      { team: 0, look: { model: "m-casual-hoodie", kid: true, skin: 0x5a3a22, hair: "curly", hairColor: 0x111111, shirt: 0xe8484a, bottomColor: 0xffffff } },
+      { team: 0, look: { model: "w-casual", kid: true, female: true, skin: 0xc68a5e, hair: "bun", hairColor: 0x2a1a10, shirt: 0xe8484a, bottomColor: 0xffffff } },
+      { team: 1, look: { model: "m-beach", kid: true, skin: 0x8a5a3a, hair: "short", hairColor: 0x111111, shirt: 0x2f9d4f, bottomColor: 0x1d3b6e } },
+      { team: 1, look: { model: "w-adventurer", kid: true, female: true, skin: 0x4a2e1a, hair: "braids", hairColor: 0x111111, shirt: 0x2f9d4f, bottomColor: 0x1d3b6e } },
     ];
     isl.npcs.forEach((n) => isl.colliders.push({ x: n.x, z: n.z, r: 0.8 }));
   }

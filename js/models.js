@@ -273,7 +273,7 @@ const ZMModels = (function () {
   // where the captain goes: seat { x, y, z, sit }.
   function buildBoat(type) {
     if (type === "catamaran") return buildCatamaran();
-    if (type === "jetski") return gltfHull(buildJetSki(), "jetski", 6.2, -0.5, { y: 0.35 });
+    if (type === "jetski") return gltfHull(buildJetSki(), "jetski", 6.2, -0.5, { y: -0.25, z: 0.7 });
     if (type === "speedboat") return gltfHull(buildSpeedboat(), "speedboat", 16, -1.3, { y: 0.6, z: 1.6 }, -0.6);
     return buildFishingBoat();
   }
@@ -1479,14 +1479,120 @@ const ZMModels = (function () {
       head.position.y -= 0.03;
     }
     g.userData = { rig, hipL: L.hip, hipR: R.hip, kneeL: L.knee, kneeR: R.knee, shL: AL.sh, shR: AR.sh, elL: AL.el, elR: AR.el, head, phase: Math.random() * 6, wave: 0, talk: 0, kick: 0 };
-    return g;
+    return gltfPerson(g, o);
   }
 
-  // Seated pose (jet ski rider): thighs forward, shins down, hands forward on
-  // the handlebars. sit=false puts the figure back to standing.
+  // ---------------- Personas glTF (Quaternius Ultimate Modular Men/Women) ----------------
+  // o.model elige el personaje; si no, uno según el aspecto. Piel y pelo toman
+  // los colores del modelo en código; la camisa también (los equipos de la
+  // mejenga se distinguen por ella).
+  const MEN = ["m-beach", "m-casual-2", "m-casual-hoodie", "m-farmer"];
+  const WOMEN = ["w-casual", "w-adventurer", "w-worker"];
+  // qué material es la camisa y cuál el pelo en cada personaje (medido por la
+  // altura del cuerpo que cubre cada uno); null: se deja el color original
+  const OUTFIT = {
+    "m-adventurer": { shirt: null, hair: ["Hair", "Eyebrows"] },
+    "m-beach": { shirt: "LightBrown", hair: ["Hair", "Eyebrows"] },
+    "m-casual-2": { shirt: "LightBrown", hair: ["Hair", "Eyebrows"] },
+    "m-casual-hoodie": { shirt: "Purple", hair: ["Hair", "Eyebrows"] },
+    "m-farmer": { shirt: null, hair: ["Eyebrows"] },
+    "m-worker": { shirt: "LightBrown", hair: ["Eyebrows", "Moustache"] },
+    "w-adventurer": { shirt: "LightGreen", hair: ["Hair_Brown"] },
+    "w-casual": { shirt: "White", hair: ["Hair_Blond", "Hair_Brown"] },
+    "w-formal": { shirt: "LimeGreen", hair: ["Red"] },
+    "w-worker": { shirt: "White", hair: ["DarkBrown"] },
+  };
+  let personCount = 0;
+  function gltfPerson(g, o) {
+    if (!hasGltf) return g;
+    const list = o.female ? WOMEN : MEN;
+    const key = o.model || list[personCount++ % list.length];
+    return useGltf(g, key, {
+      onSwap: (inst) => {
+        const skin = new THREE.Color(o.skin), hair = new THREE.Color(o.hair === "bald" ? o.skin : o.hairColor), shirt = new THREE.Color(o.shirt);
+        const fit = OUTFIT[key] || {};
+        const colorFor = (n) => (n === "Skin" ? skin : n === "Skin_Darker" ? skin.clone().multiplyScalar(0.85) : fit.hair && fit.hair.includes(n) ? hair : n === fit.shirt ? shirt : null);
+        inst.traverse((m) => {
+          if (!m.isMesh) return;
+          m.castShadow = true;
+          // una sola malla con colores de vértice (ZMGltf.mergeSkinned)
+          const ranges = m.geometry.userData.matRanges;
+          if (ranges) {
+            new Set(ranges.map((r) => r.name)).forEach((n) => {
+              const c = colorFor(n);
+              if (c) ZMGltf.recolor(m, n, c);
+            });
+          } else {
+            const c = colorFor(m.material.name);
+            if (c) m.material.color.copy(c);
+          }
+        });
+        const u = g.userData;
+        const clipsByName = {};
+        inst.userData.clips.forEach((c) => (clipsByName[c.name] = c));
+        u.gltfPerson = { mixer: inst.userData.mixer, root: inst.userData.root, actions: {}, cur: null, clipsByName };
+        if (u.seated) poseSeated(g, true);
+      },
+    });
+  }
+
+  function personAction(gp, name) {
+    if (!gp.actions[name]) {
+      const clip = gp.clipsByName && gp.clipsByName[name];
+      if (!clip) return null;
+      const a = gp.mixer.clipAction(clip);
+      if (name === "Wave" || name === "Kick_Right") {
+        a.setLoop(THREE.LoopOnce);
+        a.clampWhenFinished = true;
+      }
+      gp.actions[name] = a;
+    }
+    return gp.actions[name];
+  }
+  function playPerson(gp, name, fade) {
+    const next = personAction(gp, name);
+    if (!next || gp.cur === next) return next;
+    next.reset().play();
+    if (gp.cur) gp.cur.crossFadeTo(next, fade || 0.25, false);
+    gp.cur = next;
+    return next;
+  }
+
+  // Sentado (jet ski): muslos hacia adelante, piernas abajo, brazos al
+  // manubrio. Cada articulación gira sobre el eje lateral de la persona (los
+  // huesos tienen ejes propios). GLTFLoader quita los puntos: "UpperLegL".
+  const SEAT_POSE = [["UpperLegL", 1.5], ["UpperLegR", 1.5], ["LowerLegL", -1.5], ["LowerLegR", -1.5], ["UpperArmL", -1.0], ["UpperArmR", -1.0]];
+  function poseSeated(p, sit) {
+    const gp = p.userData.gltfPerson;
+    if (!gp.bones) {
+      gp.bones = {};
+      gp.root.traverse((b) => b.isBone && (gp.bones[b.name] = b));
+    }
+    // punto de partida: la pose de pie, congelada (el capitán no se anima)
+    gp.mixer.stopAllAction();
+    gp.cur = null;
+    const idle = personAction(gp, "Idle") || null;
+    if (!idle) return;
+    idle.reset().play();
+    gp.mixer.update(0);
+    idle.enabled = false;
+    if (!sit) return;
+    p.updateWorldMatrix(true, true);
+    const q = new THREE.Quaternion();
+    p.getWorldQuaternion(q);
+    const side = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+    SEAT_POSE.forEach(([n, a]) => {
+      const b = gp.bones[n];
+      if (!b) return;
+      b.rotateOnWorldAxis(side, a);
+      b.updateWorldMatrix(false, true);
+    });
+  }
+
   function setSeated(p, sit) {
     const u = p.userData;
     u.seated = sit;
+    if (u.gltfPerson) poseSeated(p, sit);
     u.hipL.rotation.x = u.hipR.rotation.x = sit ? 1.45 : 0;
     u.kneeL.rotation.x = u.kneeR.rotation.x = sit ? -1.35 : 0;
     u.hipL.rotation.z = sit ? -0.18 : 0;
@@ -1498,6 +1604,7 @@ const ZMModels = (function () {
   // speed in world units/s (of the unscaled figure); the figure faces -z.
   function animatePerson(p, dt, speed, t) {
     const u = p.userData;
+    if (u.gltfPerson) return animateGltfPerson(p, dt, speed);
     const k = Math.min(1, Math.abs(speed) / 7);
     const runK = Math.min(1, Math.max(0, (Math.abs(speed) - 8) / 6));
     u.phase += dt * (2 + Math.abs(speed) * 1.1);
@@ -1537,6 +1644,29 @@ const ZMModels = (function () {
       u.hipR.rotation.x = 1.2 * Math.sin(Math.PI * Math.min(1, u.kick / 0.3));
       u.kneeR.rotation.x = -0.2;
     }
+  }
+
+  // Personas glTF: quieto / caminar / correr según la velocidad, y saludo o
+  // patada cuando el juego los pide (u.wave, u.kick). Al hablar siguen quietas:
+  // la burbuja ya lo muestra.
+  function animateGltfPerson(p, dt, speed) {
+    const u = p.userData;
+    const gp = u.gltfPerson;
+    if (u.talk > 0) u.talk -= dt;
+    if (u.seated) return;
+    const v = Math.abs(speed);
+    let name = v < 0.4 ? "Idle" : v < 8 ? "Walk" : "Run";
+    if (u.kick > 0) {
+      u.kick -= dt;
+      name = "Kick_Right";
+    } else if (u.wave > 0 && v < 0.4) {
+      u.wave -= dt;
+      name = "Wave";
+    } else if (u.wave > 0) u.wave -= dt;
+    const a = playPerson(gp, name, name === "Kick_Right" ? 0.1 : 0.25);
+    // el paso del modelo sigue la velocidad real (camina a ~3.5, corre a ~10)
+    if (a) a.timeScale = name === "Walk" ? Math.max(0.5, v / 3.5) : name === "Run" ? Math.max(0.7, v / 10) : 1;
+    gp.mixer.update(dt);
   }
 
   // ---------------- Speech bubbles ----------------

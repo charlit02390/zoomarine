@@ -401,7 +401,7 @@
   let cannonPivot = null;
   let currentBoat = BOATS[0];
   // the marine biologist at the helm (hidden while walking on an island)
-  const captain = ZMModels.buildPerson({ shirt: 0x2f8fd8, bottom: "shorts", bottomColor: 0xc8b48a, skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, hat: 0xe8d28a });
+  const captain = ZMModels.buildPerson({ model: "m-adventurer", shirt: 0x2f8fd8, bottom: "shorts", bottomColor: 0xc8b48a, skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, hat: 0xe8d28a });
   boat.add(captain);
   function mountBoat(id) {
     const def = BOATS_BY_ID[id] || BOATS[0];
@@ -3977,7 +3977,7 @@
 
   // ---------------- Walking on islands ----------------
   const player = {
-    mesh: ZMModels.buildPerson({ shirt: 0x2f8fd8, bottom: "shorts", bottomColor: 0xc8b48a, skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, hat: 0xe8d28a }),
+    mesh: ZMModels.buildPerson({ model: "m-adventurer", shirt: 0x2f8fd8, bottom: "shorts", bottomColor: 0xc8b48a, skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, hat: 0xe8d28a }),
     pos: new THREE.Vector3(),
     yaw: 0,
     speed: 0,

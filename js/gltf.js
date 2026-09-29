@@ -15,6 +15,10 @@ const ZMGltf = (function () {
     whale: { url: "models/blue-whale.glb", yaw: Math.PI / 2, length: 2, clip: "" },
     jetski: { url: "models/jetski.glb", yaw: Math.PI / 2, length: 1 },
     speedboat: { url: "models/speedboat.glb", yaw: Math.PI / 2, length: 1 },
+    // Personas (Quaternius Ultimate Modular Men/Women, CC0): de pie mirando a
+    // -z, `height` de alto con los pies en y=0; todas sus animaciones.
+    ...Object.fromEntries(["m-adventurer", "m-beach", "m-casual-2", "m-casual-hoodie", "m-farmer", "m-worker", "w-adventurer", "w-casual", "w-formal", "w-worker"]
+      .map((k) => [k, { url: "models/people/" + k + ".glb", yaw: Math.PI, height: 2.65, feet: true, clip: "Idle", merge: true }])),
     // Quaternius Ships: la carabela de los piratas y los naufragios
     caravel: { url: "models/caravel.glb", yaw: Math.PI / 2, length: 1 },
     // Kenney Watercraft Kit: barcos amarrados en Puerto Limón
@@ -26,6 +30,8 @@ const ZMGltf = (function () {
   };
 
   const loader = THREE.GLTFLoader ? new THREE.GLTFLoader() : null;
+  // las personas vienen comprimidas con meshopt
+  if (loader && typeof MeshoptDecoder !== "undefined") loader.setMeshoptDecoder(MeshoptDecoder);
   const cache = {};
 
   // Caja que tiene en cuenta los huesos: en los modelos animados la malla viene
@@ -38,6 +44,97 @@ const ZMGltf = (function () {
     return a instanceof Int16Array ? 32767 : a instanceof Uint16Array ? 65535 : a instanceof Int8Array ? 127 : a instanceof Uint8Array ? 255 : 1;
   }
   const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _acc = new THREE.Vector3(), _t = new THREE.Vector3();
+
+  // Une todas las mallas con huesos de un modelo en una sola: cada persona
+  // trae ~12 (una por material) y dibujarlas por separado era lo que más
+  // costaba. El color de cada material pasa a colores de vértice y
+  // geometry.userData.matRanges dice qué vértices eran de cuál, para teñir
+  // piel, pelo o camisa por persona (ver recolor).
+  function mergeSkinned(scene) {
+    const meshes = [];
+    scene.traverse((o) => o.isSkinnedMesh && meshes.push(o));
+    if (meshes.length < 2) return;
+    const first = meshes[0];
+    const inv0 = first.bindMatrix.clone().invert();
+    let nv = 0, ni = 0;
+    meshes.forEach((m) => {
+      nv += m.geometry.attributes.position.count;
+      ni += m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count;
+    });
+    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3);
+    const sIdx = new Uint16Array(nv * 4), sW = new Float32Array(nv * 4), idx = new Uint32Array(ni);
+    const ranges = [];
+    const v = new THREE.Vector3(), M = new THREE.Matrix4(), N = new THREE.Matrix3();
+    let vo = 0, io = 0;
+    meshes.forEach((m) => {
+      const g = m.geometry, P = g.attributes.position, No = g.attributes.normal, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight;
+      // cada pieza trae su propia escala de cuantización horneada en sus
+      // inverseBindMatrices (una piel por pieza): llevar sus vértices al
+      // espacio de la primera, T = IBM0⁻¹ · IBMi (igual para todos los huesos)
+      M.copy(first.skeleton.boneInverses[0]).invert().multiply(m.skeleton.boneInverses[0]).multiply(inv0).multiply(m.bindMatrix);
+      N.getNormalMatrix(M);
+      const pn = normOf(P), nn = No ? normOf(No) : 1, wn = normOf(SW);
+      const c = m.material.color;
+      for (let i = 0; i < P.count; i++) {
+        const o = vo + i;
+        v.fromBufferAttribute(P, i).divideScalar(pn).applyMatrix4(M);
+        pos.set([v.x, v.y, v.z], o * 3);
+        if (No) {
+          v.fromBufferAttribute(No, i).divideScalar(nn).applyMatrix3(N).normalize();
+          nor.set([v.x, v.y, v.z], o * 3);
+        }
+        col.set([c.r, c.g, c.b], o * 3);
+        sIdx.set([SI.getX(i), SI.getY(i), SI.getZ(i), SI.getW(i)], o * 4);
+        sW.set([SW.getX(i) / wn, SW.getY(i) / wn, SW.getZ(i) / wn, SW.getW(i) / wn], o * 4);
+      }
+      const count = g.index ? g.index.count : P.count;
+      for (let k = 0; k < count; k++) idx[io + k] = vo + (g.index ? g.index.getX(k) : k);
+      ranges.push({ name: m.material.name, start: vo, count: P.count });
+      vo += P.count;
+      io += count;
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    geo.setAttribute("skinIndex", new THREE.BufferAttribute(sIdx, 4));
+    geo.setAttribute("skinWeight", new THREE.BufferAttribute(sW, 4));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.userData.matRanges = ranges;
+    // skinning: en r128 el material tiene que pedirlo (lo quitaron en r130)
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, skinning: true, roughness: first.material.roughness, metalness: first.material.metalness });
+    const merged = new THREE.SkinnedMesh(geo, mat);
+    merged.name = first.name;
+    merged.position.copy(first.position);
+    merged.quaternion.copy(first.quaternion);
+    merged.scale.copy(first.scale);
+    first.parent.add(merged);
+    merged.bind(first.skeleton, first.bindMatrix);
+    meshes.forEach((m) => m.parent.remove(m));
+  }
+
+  // Tiñe por persona los vértices que eran del material `name` (ver
+  // mergeSkinned). La geometría se copia la primera vez para no teñir a todos.
+  function recolor(mesh, name, color) {
+    const ranges = mesh.geometry.userData.matRanges;
+    if (!ranges) return false;
+    if (!mesh.userData.ownColors) {
+      const g0 = mesh.geometry, g = new THREE.BufferGeometry();
+      for (const n in g0.attributes) g.setAttribute(n, n === "color" ? g0.attributes.color.clone() : g0.attributes[n]);
+      g.setIndex(g0.index);
+      g.boundingSphere = g0.boundingSphere;
+      g.userData = g0.userData;
+      mesh.geometry = g;
+      mesh.userData.ownColors = true;
+    }
+    const col = mesh.geometry.attributes.color;
+    ranges.forEach((r) => {
+      if (r.name !== name) return;
+      for (let i = r.start; i < r.start + r.count; i++) col.setXYZ(i, color.r, color.g, color.b);
+    });
+    col.needsUpdate = true;
+    return true;
+  }
   function measure(root) {
     root.updateMatrixWorld(true);
     const box = new THREE.Box3();
@@ -105,6 +202,7 @@ const ZMGltf = (function () {
               fixed.add(m);
             });
           });
+          if (def.merge) mergeSkinned(scene);
           // orientar y medir en la pose inicial de la animación
           const clip = def.clip !== undefined ? gltf.animations.find((a) => a.name.endsWith(def.clip) && def.clip) || gltf.animations[0] : null;
           const holder = new THREE.Group();
@@ -129,6 +227,7 @@ const ZMGltf = (function () {
           const center = box.getCenter(new THREE.Vector3());
           entry.template = holder;
           entry.clip = clip;
+          entry.clips = gltf.animations;
           entry.size = size;
           entry.center = center;
           entry.ready = true;
@@ -152,9 +251,10 @@ const ZMGltf = (function () {
     const def = DEFS[key];
     opts = opts || {};
     const root = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(entry.template) : entry.template.clone();
-    const k = (opts.length || def.length) / entry.size.x;
+    const k = def.height ? (opts.height || def.height) / entry.size.y : (opts.length || def.length) / entry.size.x;
     const outer = new THREE.Group();
     root.position.copy(entry.center).multiplyScalar(-1);
+    if (def.feet) root.position.y = -(entry.center.y - entry.size.y / 2); // pies en el suelo
     outer.add(root);
     outer.scale.setScalar(k);
     const tintColor = opts.color !== undefined && def.tint ? new THREE.Color(opts.color) : null;
@@ -189,6 +289,8 @@ const ZMGltf = (function () {
       action.time = Math.random() * entry.clip.duration;
     }
     outer.userData.mixer = mixer;
+    outer.userData.clips = entry.clips;
+    outer.userData.root = root;
     outer.userData.mainMaterial = main;
     outer.userData.size = entry.size.clone().multiplyScalar(k);
     return outer;
@@ -404,5 +506,5 @@ const ZMGltf = (function () {
     });
   }
 
-  return { DEFS, load, preload, instance, attach, animate, measure, plant, instancer };
+  return { DEFS, load, preload, instance, attach, animate, measure, plant, instancer, recolor };
 })();
