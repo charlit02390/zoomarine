@@ -401,7 +401,7 @@
   let cannonPivot = null;
   let currentBoat = BOATS[0];
   // the marine biologist at the helm (hidden while walking on an island)
-  const captain = ZMModels.buildPerson({ shirt: 0x2f8fd8, bottom: "shorts", bottomColor: 0xc8b48a, skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, hat: 0xe8d28a });
+  const captain = ZMModels.buildPerson({ model: "m-adventurer", shirt: 0x2f8fd8, bottom: "shorts", bottomColor: 0xc8b48a, skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, hat: 0xe8d28a });
   boat.add(captain);
   function mountBoat(id) {
     const def = BOATS_BY_ID[id] || BOATS[0];
@@ -774,6 +774,26 @@
   });
   const CORAL_COLORS = [0xff7a8a, 0xffb347, 0xb58cff, 0x7fe0ff, 0xff5f9e, 0xffe066].map((c) => new THREE.Color(c));
 
+  // Quaternius rocks and sea plants (glTF, instanced): the rocks replace the
+  // dodecahedrons once loaded; the plants are new, in the shallows.
+  const ALGAE_COLORS = [0x4f9a5a, 0x6fae4a, 0x3f8f7f, 0x9a6fb0, 0xb0584a, 0x7fae8a].map((c) => new THREE.Color(c));
+  let gltfRocks = null, gltfPlants = null;
+  if (typeof ZMGltf !== "undefined") {
+    ZMGltf.instancer("rock", 420, { colors: { Rock: [1.4, 1.3, 1.3] }, material: withCaustics }).then((r) => {
+      if (!r) return;
+      gltfRocks = r;
+      decorRocks.count = 0;
+      mainScene.add(r.group);
+      seabedCentre.x = Infinity; // rebuild with the new rocks
+    });
+    ZMGltf.instancer("seaplant", 160, { material: withCaustics }).then((r) => {
+      if (!r) return;
+      gltfPlants = r;
+      mainScene.add(r.group);
+      seabedCentre.x = Infinity;
+    });
+  }
+
   const SAND = new THREE.Color(0xbfb088), MUD = new THREE.Color(0x7d7a66), DEEP_ROCK = new THREE.Color(0x323c48), ROCK = new THREE.Color(0x5e5850);
   function rebuildSeabed(cx, cz) {
     seabedCentre.x = cx;
@@ -810,19 +830,33 @@
     // decorations
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), e = new THREE.Euler();
     let nr = 0, nc = 0, nk = 0;
+    if (gltfRocks) gltfRocks.begin();
+    if (gltfPlants) gltfPlants.begin();
     const half = SEABED_SIZE / 2 - 10;
     const gx0 = Math.floor((cx - half) / DECOR_CELL), gx1 = Math.floor((cx + half) / DECOR_CELL);
     const gz0 = Math.floor((cz - half) / DECOR_CELL), gz1 = Math.floor((cz + half) / DECOR_CELL);
     for (let gx = gx0; gx <= gx1; gx++) {
       for (let gz = gz0; gz <= gz1; gz++) {
         const r = hash(gx * 3.1, gz * 1.7);
-        if (r > 0.45) continue;
+        if (r > 0.62) continue;
         const wx = (gx + hash(gx, gz + 9)) * DECOR_CELL, wz = (gz + hash(gx + 5, gz)) * DECOR_CELL;
         const h = seabedHeight(wx, wz);
         if (h > -7) continue;
+        if (r > 0.45) {
+          // sea plants and grass tufts in the lit shallows
+          if (gltfPlants && h > -160) {
+            const size = 2 + hash(gx + 4, gz + 6) * 4;
+            const color = ALGAE_COLORS[Math.floor(hash(gz, gx) * ALGAE_COLORS.length)];
+            gltfPlants.add(Math.floor(hash(gx + 8, gz + 1) * 4), wx, h - 0.2, wz, r * 40, size, 0, color);
+          }
+          continue;
+        }
         const kind = r < 0.16 ? "rock" : h > -140 ? (r < 0.32 ? "coral" : "kelp") : "rock";
         const s = 0.6 + hash(gx + 2, gz + 3) * 1.6;
-        if (kind === "rock" && nr < 420) {
+        if (kind === "rock" && gltfRocks) {
+          // same footprint as the dodecahedron it replaces
+          gltfRocks.add(Math.floor(hash(gx + 3, gz + 5) * 5), wx, h - s * 0.3, wz, r * 11, s * 2.8, s * 4.4);
+        } else if (kind === "rock" && nr < 420) {
           sc.set(s * 2.2, s * 1.4, s * 2);
           e.set(r * 5, r * 11, 0);
           pos.set(wx, h + s * 0.5, wz);
@@ -843,6 +877,8 @@
       }
     }
     decorRocks.count = nr;
+    if (gltfRocks) gltfRocks.commit();
+    if (gltfPlants) gltfPlants.commit();
     decorCoral.count = nc;
     decorKelp.count = nk;
     [decorRocks, decorCoral, decorKelp].forEach((d) => {
@@ -853,6 +889,7 @@
 
   function updateSeabed(show) {
     [seabed, decorRocks, decorCoral, decorKelp].forEach((m) => (m.visible = show));
+    [gltfRocks, gltfPlants].forEach((g) => g && (g.group.visible = show));
     if (!show) return;
     const x = camera.position.x, z = camera.position.z;
     if (Math.hypot(x - seabedCentre.x, z - seabedCentre.z) > 60) {
@@ -884,7 +921,7 @@
     let x = Math.cos(a) * d, z = Math.sin(a) * d;
     const h = seabedHeight(x, z);
     if (h > -30) return;
-    const ship = ZMModels.buildPirateShip();
+    const ship = ZMModels.buildPirateShip({ wreck: true });
     ship.traverse((o) => {
       if (o.isMesh && o.material && o.material.color) {
         o.material = o.material.clone();
@@ -3940,7 +3977,7 @@
 
   // ---------------- Walking on islands ----------------
   const player = {
-    mesh: ZMModels.buildPerson({ shirt: 0x2f8fd8, bottom: "shorts", bottomColor: 0xc8b48a, skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, hat: 0xe8d28a }),
+    mesh: ZMModels.buildPerson({ model: "m-adventurer", shirt: 0x2f8fd8, bottom: "shorts", bottomColor: 0xc8b48a, skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, hat: 0xe8d28a }),
     pos: new THREE.Vector3(),
     yaw: 0,
     speed: 0,
@@ -4161,7 +4198,8 @@
     islands.forEach((isl) => {
       const near = !diving && Math.hypot(c.x - isl.x, c.z - isl.z) < 650 + isl.r;
       const kids = isl.mesh.children;
-      for (let i = 1; i < kids.length; i++) kids[i].visible = near;
+      // the code-built vegetation stays hidden once its glTF version is planted
+      for (let i = 1; i < kids.length; i++) kids[i].visible = near && !(isl.vegPlanted && kids[i] === isl.vegGroup);
     });
     const town = !diving && Math.hypot(c.x - homeIsland.x, c.z - homeIsland.z) < 450;
     people.forEach((p) => {

@@ -135,7 +135,28 @@ const ZMIslands = (function () {
   // ---------------- Props ----------------
   function placeAt(isl, obj, wx, wz, sink) {
     obj.position.set(wx - isl.x, heightAt(isl, wx, wz) - (sink || 0), wz - isl.z);
+    const v = obj.userData.veg;
+    if (v) {
+      // vegetación: el modelo en código queda aparte como respaldo y se anota
+      // dónde va la versión glTF (ver plantNature)
+      isl.vegGroup.add(obj);
+      const size = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+      isl.veg.push({
+        kind: v.kind, color: v.color, variant: v.variant,
+        x: obj.position.x, y: obj.position.y, z: obj.position.z, rotY: obj.rotation.y,
+        height: v.height || size.y,
+        width: v.kind === "rock" ? Math.max(size.x, size.z) : 0,
+      });
+      return obj;
+    }
     isl.mesh.add(obj);
+    return obj;
+  }
+
+  // Marca un objeto de scatter como vegetación glTF (palm, pine, rock, bush).
+  // Un Object3D vacío sirve para lo que no tiene versión en código (arbustos).
+  function veg(obj, kind, variant, extra) {
+    obj.userData.veg = Object.assign({ kind, variant }, extra);
     return obj;
   }
 
@@ -163,21 +184,59 @@ const ZMIslands = (function () {
     return placed;
   }
 
+  // Vegetación: el modelo en código (respaldo) marcado para su versión glTF
+  const palm = (seed, hash) => veg(M.buildPalm(seed, hash), "palm", Math.floor(hash(seed, 5) * 3));
+  const pine = (seed, hash) => veg(M.buildPine(seed, hash), "pine", Math.floor(hash(seed, 5) * 3));
+  const rock = (size, color, seed, hash) => veg(M.buildRock(size, color, seed, hash), "rock", Math.floor(hash(seed, 6) * 5), { color });
+  const bush = (seed, hash) => {
+    const o = veg(new THREE.Object3D(), "bush", Math.floor(hash(seed, 5) * 3), { height: 1.4 + hash(seed, 6) * 1.6 });
+    o.rotation.y = hash(seed, 7) * Math.PI * 2;
+    return o;
+  };
+
+  // Cambia la vegetación hecha en código por la de Quaternius cuando carga.
+  // Multiplicadores de color: la textura de roca es gris oscura y se lleva al
+  // color de roca de cada isla; la de pino es amarillenta y se pasa a verde.
+  const ROCK_TINT = { 0x8a7d6a: [2.1, 1.9, 1.75], 0x6c6f73: [1.65, 1.68, 1.9], 0x2b2624: [0.66, 0.58, 0.6] };
+  const PINE_TINT = { PineTree_Leaves: [0.32, 0.55, 0.3] };
+  const BUSH_TINT = { Bush_Leaves: [0.55, 0.75, 0.45] };
+  function plantNature(isl) {
+    if (typeof ZMGltf === "undefined" || !isl.veg.length) return;
+    const groups = {};
+    isl.veg.forEach((it) => {
+      const key = it.kind + (it.kind === "rock" ? ":" + it.color : "");
+      (groups[key] = groups[key] || []).push(it);
+    });
+    Promise.all(Object.keys(groups).map((key) => {
+      const items = groups[key];
+      const kind = items[0].kind;
+      const colors = kind === "rock" ? { Rock: ROCK_TINT[items[0].color] } : kind === "pine" ? PINE_TINT : kind === "bush" ? BUSH_TINT : null;
+      return ZMGltf.plant(isl.mesh, kind, items, { colors });
+    })).then((planted) => {
+      if (planted.every(Boolean)) {
+        isl.vegPlanted = true; // el nivel de detalle del juego lo respeta
+        isl.vegGroup.visible = false;
+      }
+      else planted.forEach((g) => g && isl.mesh.remove(g)); // algo falló: queda todo en código
+    });
+  }
+
   function populate(isl, hash) {
     const seed = isl.seed;
     if (isl.theme === "tropical") {
-      scatter(isl, hash, 1, 16, 0.35, 0.85, 0.8, (i) => M.buildPalm(seed * 20 + i, hash));
-      scatter(isl, hash, 2, 5, 0.3, 0.95, 1.6, (i) => M.buildRock(1.2 + hash(seed, i) * 1.5, 0x8a7d6a, seed + i, hash));
+      scatter(isl, hash, 1, 16, 0.35, 0.85, 0.8, (i) => palm(seed * 20 + i, hash));
+      scatter(isl, hash, 2, 5, 0.3, 0.95, 1.6, (i) => rock(1.2 + hash(seed, i) * 1.5, 0x8a7d6a, seed + i, hash));
+      scatter(isl, hash, 5, 12, 0.3, 0.9, 1.2, (i) => bush(seed * 20 + i, hash));
     } else if (isl.theme === "rocoso") {
-      scatter(isl, hash, 1, 14, 0.2, 0.75, 1.4, (i) => M.buildPine(seed * 20 + i, hash));
-      scatter(isl, hash, 2, 8, 0.4, 0.97, 2, (i) => M.buildRock(1.6 + hash(seed, i) * 2.2, 0x6c6f73, seed + i, hash));
+      scatter(isl, hash, 1, 14, 0.2, 0.75, 1.4, (i) => pine(seed * 20 + i, hash));
+      scatter(isl, hash, 2, 8, 0.4, 0.97, 2, (i) => rock(1.6 + hash(seed, i) * 2.2, 0x6c6f73, seed + i, hash));
       const a = hash(seed, 77) * Math.PI * 2;
       const d = 0.86 * shoreRadius(isl, a);
       const lx = isl.x + Math.cos(a) * d, lz = isl.z + Math.sin(a) * d;
       placeAt(isl, M.buildLighthouse(), lx, lz, 0.3);
       isl.colliders.push({ x: lx, z: lz, r: 2.2 });
     } else if (isl.theme === "hielo") {
-      scatter(isl, hash, 1, 5, 0.3, 0.7, 1.4, (i) => M.buildPine(seed * 20 + i, hash));
+      scatter(isl, hash, 1, 5, 0.3, 0.7, 1.4, (i) => pine(seed * 20 + i, hash));
       const iceMat = new THREE.MeshStandardMaterial({ color: 0xbfe8ff, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85, flatShading: true });
       scatter(isl, hash, 2, 9, 0.4, 0.95, 1.6, (i) => {
         const c = new THREE.Mesh(new THREE.ConeGeometry(1 + hash(seed, i) * 0.8, 3 + hash(seed, i + 3) * 4, 5), iceMat);
@@ -186,8 +245,8 @@ const ZMIslands = (function () {
         return c;
       });
     } else if (isl.theme === "volcanico") {
-      scatter(isl, hash, 1, 8, 0.62, 0.86, 0.8, (i) => M.buildPalm(seed * 20 + i, hash));
-      scatter(isl, hash, 2, 8, 0.3, 0.95, 1.8, (i) => M.buildRock(1.4 + hash(seed, i) * 2, 0x2b2624, seed + i, hash));
+      scatter(isl, hash, 1, 8, 0.62, 0.86, 0.8, (i) => palm(seed * 20 + i, hash));
+      scatter(isl, hash, 2, 8, 0.3, 0.95, 1.8, (i) => rock(1.4 + hash(seed, i) * 2, 0x2b2624, seed + i, hash));
       const top = heightAt(isl, isl.x, isl.z);
       const lava = new THREE.Mesh(new THREE.CircleGeometry(isl.r * 0.1, 16), new THREE.MeshBasicMaterial({ color: 0xff6a1f }));
       lava.rotation.x = -Math.PI / 2;
@@ -335,8 +394,9 @@ const ZMIslands = (function () {
 
     // palms, avoiding the town centre and the pier approach
     const outsideTown = (lx, lz) => Math.hypot(lx, lz - 18) > 34 && !(lx > 4 && lx < 50 && lz > 50) && !(lx > -47 && lx < -9 && lz > 8 && lz < 36);
-    scatter(isl, hash, 3, 22, 0.45, 0.9, 0.8, (i) => M.buildPalm(700 + i, hash), outsideTown);
-    scatter(isl, hash, 4, 5, 0.5, 0.95, 1.6, (i) => M.buildRock(1 + hash(i, 44) * 1.4, 0x8a7d6a, 900 + i, hash), outsideTown);
+    scatter(isl, hash, 3, 22, 0.45, 0.9, 0.8, (i) => palm(700 + i, hash), outsideTown);
+    scatter(isl, hash, 4, 5, 0.5, 0.95, 1.6, (i) => rock(1 + hash(i, 44) * 1.4, 0x8a7d6a, 900 + i, hash), outsideTown);
+    scatter(isl, hash, 6, 14, 0.4, 0.9, 1.2, (i) => bush(800 + i, hash), outsideTown);
 
     // points of interest the player can walk up to
     isl.pois.push(
@@ -348,26 +408,26 @@ const ZMIslands = (function () {
     );
     // NPCs that stay at their post: where they stand, which way they face, how they look
     isl.npcs = [
-      { id: "marisol", x: isl.x + 6, z: isl.z + 59, ry: Math.PI, look: { female: true, skin: 0x6b4226, hair: "bun", hairColor: 0x8a8a8a, shirt: 0xe8484a, bottom: "skirt", bottomColor: 0xf2c94c } },
-      { id: "fishmonger", x: isl.x + 38, z: isl.z + 62.8, ry: Math.PI, look: { skin: 0x4a2e1a, hair: "short", hairColor: 0x111111, shirt: 0xffffff, bottom: "pants", bottomColor: 0x2b3440, hat: 0xe8d28a } },
-      { id: "mechanic", x: isl.x - 30, z: isl.z + 62, ry: lookTo(-30, 62, 0, 80), look: { skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, beard: 0x3a2412, shirt: 0x2b4a6f, bottom: "pants", bottomColor: 0x2b4a6f, hat: 0xff8a2a, hatStyle: "cap" } },
-      { id: "boatwright", x: isl.x - 10.5, z: isl.z + 65, ry: lookTo(-10.5, 65, 0, 55), look: { female: true, skin: 0x8a5a3a, hair: "long", hairColor: 0x1a1210, shirt: 0xf4f4f4, bottom: "pants", bottomColor: 0x1d3b6e, hat: 0x1d3b6e, hatStyle: "cap" } },
-      { id: "chema", x: isl.x + 27, z: isl.z + 74, ry: lookTo(27, 74, 18, 66), look: { skin: 0x5a3a22, hair: "bald", beard: 0xdedede, hairColor: 0xdedede, shirt: 0xf2e6c8, bottom: "pants", bottomColor: 0x6b5a3a, hat: 0xd8c27a } },
+      { id: "marisol", x: isl.x + 6, z: isl.z + 59, ry: Math.PI, look: { model: "w-formal", female: true, skin: 0x6b4226, hair: "bun", hairColor: 0x8a8a8a, shirt: 0xe8484a, bottom: "skirt", bottomColor: 0xf2c94c } },
+      { id: "fishmonger", x: isl.x + 38, z: isl.z + 62.8, ry: Math.PI, look: { model: "m-farmer", skin: 0x4a2e1a, hair: "short", hairColor: 0x111111, shirt: 0xffffff, bottom: "pants", bottomColor: 0x2b3440, hat: 0xe8d28a } },
+      { id: "mechanic", x: isl.x - 30, z: isl.z + 62, ry: lookTo(-30, 62, 0, 80), look: { model: "m-worker", skin: 0xc68a5e, hair: "short", hairColor: 0x3a2412, beard: 0x3a2412, shirt: 0x2b4a6f, bottom: "pants", bottomColor: 0x2b4a6f, hat: 0xff8a2a, hatStyle: "cap" } },
+      { id: "boatwright", x: isl.x - 10.5, z: isl.z + 65, ry: lookTo(-10.5, 65, 0, 55), look: { model: "w-worker", female: true, skin: 0x8a5a3a, hair: "long", hairColor: 0x1a1210, shirt: 0xf4f4f4, bottom: "pants", bottomColor: 0x1d3b6e, hat: 0x1d3b6e, hatStyle: "cap" } },
+      { id: "chema", x: isl.x + 27, z: isl.z + 74, ry: lookTo(27, 74, 18, 66), look: { model: "m-casual-2", skin: 0x5a3a22, hair: "bald", beard: 0xdedede, hairColor: 0xdedede, shirt: 0xf2e6c8, bottom: "pants", bottomColor: 0x6b5a3a, hat: 0xd8c27a } },
     ];
     // townsfolk who stroll between these spots and stop to chat
     isl.waypoints = [[0, 30], [8, 42], [38, 74], [12, 66], [22, 70], [-50, 32], [-40, -4], [-12, -32], [20, -34], [46, -8], [52, 34], [4, 8], [-28, 38], [-18, 52]].map(([x, z]) => ({ x: isl.x + x, z: isl.z + z }));
     isl.walkers = [
-      { female: true, skin: 0x8a5a3a, hair: "braids", hairColor: 0x111111, shirt: 0x7ed957, bottom: "skirt", bottomColor: 0x3b5a8a },
-      { skin: 0x5a3a22, hair: "afro", hairColor: 0x111111, shirt: 0xffb347, bottom: "shorts", bottomColor: 0xe0d0a0 },
-      { female: true, skin: 0xd9a57a, hair: "long", hairColor: 0x3a2412, shirt: 0x54c6eb, bottom: "pants", bottomColor: 0xf4f4f4 },
-      { skin: 0x6a4228, hair: "short", hairColor: 0x111111, shirt: 0xffd84a, bottom: "shorts", bottomColor: 0x2f7d4f, hat: 0xc8302c, hatStyle: "cap" },
+      { model: "w-adventurer", female: true, skin: 0x8a5a3a, hair: "braids", hairColor: 0x111111, shirt: 0x7ed957, bottom: "skirt", bottomColor: 0x3b5a8a },
+      { model: "m-beach", skin: 0x5a3a22, hair: "afro", hairColor: 0x111111, shirt: 0xffb347, bottom: "shorts", bottomColor: 0xe0d0a0 },
+      { model: "w-casual", female: true, skin: 0xd9a57a, hair: "long", hairColor: 0x3a2412, shirt: 0x54c6eb, bottom: "pants", bottomColor: 0xf4f4f4 },
+      { model: "m-casual-hoodie", skin: 0x6a4228, hair: "short", hairColor: 0x111111, shirt: 0xffd84a, bottom: "shorts", bottomColor: 0x2f7d4f, hat: 0xc8302c, hatStyle: "cap" },
     ];
     // kids playing the mejenga: two teams of two
     isl.kids = [
-      { team: 0, look: { kid: true, skin: 0x5a3a22, hair: "curly", hairColor: 0x111111, shirt: 0xe8484a, bottomColor: 0xffffff } },
-      { team: 0, look: { kid: true, female: true, skin: 0xc68a5e, hair: "bun", hairColor: 0x2a1a10, shirt: 0xe8484a, bottomColor: 0xffffff } },
-      { team: 1, look: { kid: true, skin: 0x8a5a3a, hair: "short", hairColor: 0x111111, shirt: 0x2f9d4f, bottomColor: 0x1d3b6e } },
-      { team: 1, look: { kid: true, female: true, skin: 0x4a2e1a, hair: "braids", hairColor: 0x111111, shirt: 0x2f9d4f, bottomColor: 0x1d3b6e } },
+      { team: 0, look: { model: "m-casual-hoodie", kid: true, skin: 0x5a3a22, hair: "curly", hairColor: 0x111111, shirt: 0xe8484a, bottomColor: 0xffffff } },
+      { team: 0, look: { model: "w-casual", kid: true, female: true, skin: 0xc68a5e, hair: "bun", hairColor: 0x2a1a10, shirt: 0xe8484a, bottomColor: 0xffffff } },
+      { team: 1, look: { model: "m-beach", kid: true, skin: 0x8a5a3a, hair: "short", hairColor: 0x111111, shirt: 0x2f9d4f, bottomColor: 0x1d3b6e } },
+      { team: 1, look: { model: "w-adventurer", kid: true, female: true, skin: 0x4a2e1a, hair: "braids", hairColor: 0x111111, shirt: 0x2f9d4f, bottomColor: 0x1d3b6e } },
     ];
     isl.npcs.forEach((n) => isl.colliders.push({ x: n.x, z: n.z, r: 0.8 }));
   }
@@ -398,10 +458,16 @@ const ZMIslands = (function () {
     isl.mesh.position.set(isl.x, 0, isl.z);
     isl.mesh.add(buildTerrain(isl));
     const terrain = isl.mesh.children[0];
+    isl.vegGroup = new THREE.Group();
+    isl.mesh.add(isl.vegGroup);
+    isl.veg = [];
     if (isl.home) buildHomePort(isl, hash);
     else populate(isl, hash);
-    // one merged mesh per material for all the island's static props
-    M.bake(isl.mesh, [terrain, isl.chest && isl.chest.mesh].filter(Boolean));
+    // one merged mesh per material for all the island's static props; the
+    // vegetation is baked on its own so it can be hidden when the glTF arrives
+    M.bake(isl.mesh, [terrain, isl.chest && isl.chest.mesh, isl.vegGroup].filter(Boolean));
+    M.bake(isl.vegGroup);
+    plantNature(isl);
     if (isl.home) mooredBoats(isl);
     return isl;
   }
