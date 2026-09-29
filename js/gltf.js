@@ -249,6 +249,7 @@ const ZMGltf = (function () {
     pine: "models/nature/pines.glb",
     rock: "models/nature/rocks.glb",
     bush: "models/nature/bushes.glb",
+    seaplant: "models/nature/seaplants.glb",
   };
   const natureCache = {};
   function loadNature(kind) {
@@ -342,5 +343,66 @@ const ZMGltf = (function () {
     });
   }
 
-  return { DEFS, load, preload, instance, attach, animate, measure, plant };
+  // Instancias que se rearman seguido (el fondo marino alrededor del buzo):
+  // `capacity` por variante. opts.material(m) adapta cada material (p. ej.
+  // cáusticas), opts.colors como en plant. Uso: begin(); add(...) por cada
+  // planta; commit().
+  const _base = new THREE.Matrix4();
+  function instancer(kind, capacity, opts) {
+    opts = opts || {};
+    return loadNature(kind).then((variants) => {
+      if (!variants) return null;
+      const group = new THREE.Group();
+      const white = new THREE.Color(1, 1, 1);
+      const sets = variants.map((v) => {
+        const meshes = v.parts.map((part) => {
+          let material = part.material.clone();
+          const rgb = opts.colors && opts.colors[material.name];
+          if (rgb) material.color.setRGB(rgb[0], rgb[1], rgb[2]);
+          if (opts.material) material = opts.material(material) || material;
+          const im = new THREE.InstancedMesh(part.geometry, material, capacity);
+          im.frustumCulled = false; // se rearma alrededor del buzo
+          // r128 crea el búfer de color con el `count` del momento: crearlo ya
+          im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+          im.count = 0;
+          group.add(im);
+          return { im, matrix: part.matrix };
+        });
+        return { v, meshes, n: 0 };
+      });
+      return {
+        group,
+        variants: sets.length,
+        begin() {
+          sets.forEach((st) => (st.n = 0));
+        },
+        // variant: índice; height/width: tamaño deseado (con los dos, cabe en
+        // esa caja); color: tinte de esta instancia (opcional)
+        add(variant, x, y, z, rotY, height, width, color) {
+          const st = sets[variant % sets.length];
+          if (st.n >= capacity) return false;
+          const k = Math.min(height ? height / st.v.height : Infinity, width ? width / st.v.width : Infinity);
+          _pos.set(x, y, z);
+          _q.setFromAxisAngle(_up, rotY || 0);
+          _scl.setScalar(k);
+          _base.compose(_pos, _q, _scl);
+          st.meshes.forEach(({ im, matrix }) => {
+            im.setMatrixAt(st.n, _m4.copy(_base).multiply(matrix));
+            im.setColorAt(st.n, color || white);
+          });
+          st.n++;
+          return true;
+        },
+        commit() {
+          sets.forEach((st) => st.meshes.forEach(({ im }) => {
+            im.count = st.n;
+            im.instanceMatrix.needsUpdate = true;
+            if (im.instanceColor) im.instanceColor.needsUpdate = true;
+          }));
+        },
+      };
+    });
+  }
+
+  return { DEFS, load, preload, instance, attach, animate, measure, plant, instancer };
 })();
