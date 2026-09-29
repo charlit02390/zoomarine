@@ -402,7 +402,35 @@ const ZMIslands = (function () {
     else populate(isl, hash);
     // one merged mesh per material for all the island's static props
     M.bake(isl.mesh, [terrain, isl.chest && isl.chest.mesh].filter(Boolean));
+    if (isl.home) mooredBoats(isl);
     return isl;
+  }
+
+  // Barcos del Watercraft Kit de Kenney amarrados junto al muelle, proa al mar,
+  // y boyas marcando el canal. Van después del bake: se cargan aparte.
+  function mooredBoats(isl) {
+    if (typeof ZMGltf === "undefined") return;
+    const W = PIER.x - PIER.w / 2, E = PIER.x + PIER.w / 2;
+    [
+      ["kFishing", W - 4, PIER.z0 + 20, 3.2, 0.9],
+      ["kTug", W - 5, PIER.z0 + 44, 3.6, 1.1],
+      ["kSail", E + 4, PIER.z0 + 18, 3.0, 0.7],
+      ["kRow", E + 3, PIER.z0 + 10, 0, 0.3],
+      ["kBuoy", PIER.x - 22, PIER.z0 + 78, 0, 0.8],
+      ["kBuoy", PIER.x + 22, PIER.z0 + 78, 0, 0.8],
+    ].forEach(([key, lx, lz, r, draft]) => {
+      const host = new THREE.Group();
+      host.position.set(lx, 0, lz);
+      host.rotation.y = key === "kBuoy" ? 0 : -Math.PI / 2; // proa (+x) hacia mar abierto (+z)
+      isl.mesh.add(host);
+      if (r) isl.colliders.push({ x: isl.x + lx, z: isl.z + lz, r });
+      ZMGltf.attach(host, key, {
+        onSwap: (inst) => {
+          inst.position.y = inst.userData.size.y / 2 - draft;
+          inst.traverse((o) => o.isMesh && (o.castShadow = true));
+        },
+      });
+    });
   }
 
   // Ground height including walkable platforms (pier, gazebo floor).

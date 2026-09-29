@@ -2,7 +2,7 @@
 // Estrategia "red primero": con conexión siempre baja la versión más nueva
 // (saltándose la caché HTTP de GitHub Pages) y la guarda; sin conexión usa la
 // copia guardada. Si cambias la lista de archivos, sube CACHE_VERSION.
-const CACHE_VERSION = 'zoomarine-v10';
+const CACHE_VERSION = 'zoomarine-v11';
 
 const PRECACHE = [
   './',
@@ -10,11 +10,28 @@ const PRECACHE = [
   'style.css',
   'manifest.webmanifest',
   'js/vendor/three.min.js',
+  'js/vendor/GLTFLoader.js',
+  'js/vendor/SkeletonUtils.js',
+  'js/gltf.js',
   'js/data.js',
   'js/profile.js',
   'js/models.js',
   'js/islands.js',
   'js/game3d.js',
+  'models/fish.glb',
+  'models/tuna.glb',
+  'models/swordfish.glb',
+  'models/manta.glb',
+  'models/shark.glb',
+  'models/blue-whale.glb',
+  'models/jetski.glb',
+  'models/speedboat.glb',
+  'models/kenney/boat-fishing-small.glb',
+  'models/kenney/boat-tug-a.glb',
+  'models/kenney/boat-sail-a.glb',
+  'models/kenney/boat-row-small.glb',
+  'models/kenney/buoy.glb',
+  'models/kenney/Textures/colormap.png',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-512.png',
