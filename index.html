@@ -112,6 +112,29 @@
         <button id="new-game-btn" class="start-btn">Nueva expedición</button>
         <button id="journal-menu-btn" class="start-btn">📖 Bitácora</button>
         <button id="logout-btn" class="link-btn">Cambiar de explorador</button>
+        <button id="credits-btn" class="link-btn">Créditos</button>
+      </div>
+
+      <!-- Créditos de los modelos 3D (los CC BY exigen mencionar al autor) -->
+      <div id="credits-panel" class="hidden">
+        <h3>Créditos</h3>
+        <div class="credits-list">
+          <p><strong>Modelos 3D (CC BY 4.0)</strong></p>
+          <ul>
+            <li>Tiburón: «Shark», de Optic_idealist</li>
+            <li>Ballena azul: «Blue Whale - Textured», de Bohdan Lvov</li>
+            <li>Jet ski: «2012 Sea-Doo GTI SE 130», de BoatUS Foundation</li>
+            <li>Lancha rápida: «ZEFIRO», de angelo raffaele catalano</li>
+          </ul>
+          <p>Publicados en Sketchfab bajo la licencia <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. Se optimizaron para el juego (texturas y geometría reducidas).</p>
+          <p><strong>Modelos 3D (CC0)</strong></p>
+          <ul>
+            <li>Peces, atún, pez espada y manta: <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a></li>
+            <li>Barcos y boyas del puerto: <a href="https://kenney.nl" target="_blank" rel="noopener">Kenney</a> (Watercraft Kit)</li>
+          </ul>
+          <p>Motor 3D: <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> (MIT).</p>
+        </div>
+        <button id="credits-back" class="start-btn">Volver</button>
       </div>
     </div>
   </div>
@@ -171,6 +194,9 @@
   </div>
 
   <script src="js/vendor/three.min.js"></script>
+  <script src="js/vendor/GLTFLoader.js"></script>
+  <script src="js/vendor/SkeletonUtils.js"></script>
+  <script src="js/gltf.js"></script>
   <script src="js/data.js"></script>
   <script src="js/profile.js"></script>
   <script src="js/models.js"></script>

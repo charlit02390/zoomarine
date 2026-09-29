@@ -64,6 +64,13 @@ const ZMModels = (function () {
     return root;
   }
 
+  // Modelo glTF (js/gltf.js) en lugar del hecho en código, cuando carga.
+  const hasGltf = typeof ZMGltf !== "undefined";
+  function useGltf(host, key, opts, hide) {
+    if (hasGltf) ZMGltf.attach(host, key, opts, hide);
+    return host;
+  }
+
   function shadowed(obj) {
     obj.traverse((o) => {
       if (o.isMesh) {
@@ -266,9 +273,30 @@ const ZMModels = (function () {
   // where the captain goes: seat { x, y, z, sit }.
   function buildBoat(type) {
     if (type === "catamaran") return buildCatamaran();
-    if (type === "jetski") return buildJetSki();
-    if (type === "speedboat") return buildSpeedboat();
+    if (type === "jetski") return gltfHull(buildJetSki(), "jetski", 6.2, -0.5, { y: 0.35 });
+    if (type === "speedboat") return gltfHull(buildSpeedboat(), "speedboat", 16, -1.3, { y: 0.6, z: 1.6 }, -0.6);
     return buildFishingBoat();
+  }
+
+  // Cambia el casco hecho en código por el glTF (mismo largo, quilla a la
+  // misma altura); el cañón y la caña se quedan. `seat` corrige el asiento del
+  // capitán y `cannonDy` baja el cañón a la cubierta del glTF; b.onSeatChange
+  // avisa al juego si el barco ya estaba montado.
+  function gltfHull(b, key, length, keel, seat, cannonDy) {
+    const keep = [b.cannonPivot, b.fishingRod];
+    const hide = b.group.children.filter((c) => !keep.includes(c));
+    useGltf(b.group, key, {
+      length,
+      onSwap: (inst) => {
+        inst.rotation.y = Math.PI / 2; // proa de +x a -z, como los barcos del juego
+        inst.position.y = keel + inst.userData.size.y / 2;
+        inst.traverse((o) => o.isMesh && (o.castShadow = true));
+        Object.assign(b.seat, seat);
+        if (b.cannonPivot && cannonDy) b.cannonPivot.position.y += cannonDy;
+        if (b.onSeatChange) b.onSeatChange();
+      },
+    }, hide);
+    return b;
   }
 
   // Sport-fishing trawler: the starting boat.
@@ -859,12 +887,14 @@ const ZMModels = (function () {
     g.userData.pecs = pecs;
     g.userData.mainMaterial = bodyMat;
     g.userData.phase = Math.random() * 10;
-    return g;
+    // opts.kind: "tuna" | "manta"; los de pico usan el pez espada
+    return useGltf(g, opts.bill ? "swordfish" : opts.kind || "fish", { color, glow: opts.glow });
   }
 
   // Swimming: a wave runs down the body and the tail follows it; call every
   // frame with the fish's current speed factor.
   function swimFish(fish, t, rate) {
+    if (hasGltf && ZMGltf.animate(fish, t, rate)) return;
     const r = rate === undefined ? 1 : rate;
     const u = fish.userData;
     const phase = t * (5 + r * 7) + u.phase;
@@ -978,11 +1008,12 @@ const ZMModels = (function () {
     g.scale.setScalar(len / 2);
     const maxR = Math.max(...def.radii);
     g.userData = { tail, radius: (maxR * len) / 2, blowhole: species.shape === "cachalote" ? 0.95 : 0.6, phase: Math.random() * 10 };
-    return g;
+    return species.shape === "azul" ? useGltf(g, "whale") : g;
   }
 
   // Tail beats up and down; `rate` ~1 cruising, higher when diving or leaping.
   function swimWhale(w, t, rate) {
+    if (hasGltf && ZMGltf.animate(w, t, rate)) return;
     const r = rate === undefined ? 1 : rate;
     w.userData.tail.rotation.z = Math.sin(t * (1.2 + r * 0.9) + w.userData.phase) * (0.18 + r * 0.12);
   }
@@ -1019,7 +1050,7 @@ const ZMModels = (function () {
     g.userData.tail = tail;
     g.userData.mainMaterial = skin;
     g.userData.phase = Math.random() * 10;
-    return g;
+    return useGltf(g, "shark");
   }
 
   // ---------------- Harpoon ----------------

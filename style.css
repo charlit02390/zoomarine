@@ -501,6 +501,11 @@ html, body {
 }
 .link-btn:hover { color: #eaf6ff; }
 #welcome-text { font-size: 17px; color: #eaf6ff; margin: 0 0 6px; }
+#credits-panel h3 { margin: 0 0 6px; color: #eaf6ff; font-size: 16px; }
+.credits-list { max-height: 45vh; overflow-y: auto; text-align: left; font-size: 12px; line-height: 1.45; color: #b8d6e8; }
+.credits-list p { margin: 6px 0 2px; }
+.credits-list ul { margin: 0; padding-left: 18px; }
+.credits-list a { color: #7fe0ff; }
 #save-summary { font-size: 13px; color: #9fc6dd; margin: 0 0 8px; line-height: 1.5; }
 
 #zone-banner {
@@ -932,7 +937,8 @@ html, body {
   .start-logo { grid-column: 1; grid-row: 1; font-size: 34px; }
   .start-box h1 { grid-column: 1; grid-row: 2; font-size: 28px; }
   .start-subtitle { grid-column: 1; grid-row: 3; align-self: start; margin: 2px 0 0; }
-  #login-form, #start-menu { grid-column: 2; grid-row: 1 / span 3; }
+  #login-form, #start-menu, #credits-panel { grid-column: 2; grid-row: 1 / span 3; }
+  .credits-list { max-height: calc(100dvh - 120px); }
   #login-form { gap: 4px; }
   #login-form label { margin-top: 2px; }
   #login-form input { padding: 7px 10px; }

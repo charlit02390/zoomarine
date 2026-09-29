@@ -413,9 +413,14 @@
     boat.add(boatModel.group);
     cannonPivot = boatModel.cannonPivot;
     currentBoat = def;
-    const seat = boatModel.seat;
-    captain.position.set(seat.x, seat.y, seat.z);
-    ZMModels.setSeated(captain, seat.sit);
+    const seatCaptain = () => {
+      const seat = boatModel.seat;
+      captain.position.set(seat.x, seat.y, seat.z);
+      ZMModels.setSeated(captain, seat.sit);
+    };
+    seatCaptain();
+    // el casco glTF puede cargar después y mover el asiento
+    boatModel.onSeatChange = () => boatModel && boatModel.group.parent === boat && seatCaptain();
   }
   mountBoat("fishing");
   function boatRadius() {
@@ -425,8 +430,9 @@
   const boatState = { yaw: 0, speed: 0, lean: 0 };
 
   // ---------------- Creature builder ----------------
-  function buildCreature(color, scale) {
-    return ZMModels.buildFish(color, (scale || 3) * 1.2);
+  // kind: modelo glTF especial ("manta"); si no, el pez genérico pintado
+  function buildCreature(color, scale, kind) {
+    return ZMModels.buildFish(color, (scale || 3) * 1.2, { kind });
   }
 
   // ---------------- Build the 7 dive zones ----------------
@@ -490,7 +496,7 @@
 
     // creature
     const creatureLocalPos = new THREE.Vector3(60, -70, 30);
-    const creatureMesh = buildCreature(sea.creature.color, 3.2);
+    const creatureMesh = buildCreature(sea.creature.color, 3.2, sea.creature.id === "manta" ? "manta" : undefined);
     creatureMesh.position.copy(creatureLocalPos);
     group.add(creatureMesh);
 
@@ -1616,6 +1622,15 @@
     }
   });
   let journalFromMenu = false;
+  const creditsPanel = document.getElementById("credits-panel");
+  document.getElementById("credits-btn").addEventListener("click", () => {
+    startMenu.classList.add("hidden");
+    creditsPanel.classList.remove("hidden");
+  });
+  document.getElementById("credits-back").addEventListener("click", () => {
+    creditsPanel.classList.add("hidden");
+    startMenu.classList.remove("hidden");
+  });
   document.getElementById("journal-menu-btn").addEventListener("click", () => {
     journalFromMenu = true;
     startScreen.classList.add("hidden");
@@ -2015,6 +2030,7 @@
     startScreen.classList.remove("hidden");
     loginForm.classList.remove("hidden");
     startMenu.classList.add("hidden");
+    creditsPanel.classList.add("hidden");
     loginError.textContent = "";
     loginPin.value = "";
     setTimeout(() => (loginName.value ? loginPin : loginName).focus(), 50);
@@ -2031,6 +2047,7 @@
     startScreen.classList.remove("hidden");
     loginForm.classList.add("hidden");
     startMenu.classList.remove("hidden");
+    creditsPanel.classList.add("hidden");
     welcomeText.textContent = "Hola, " + profile.name + " 👋";
     const data = Profiles.loadSave(profile.key);
     if (data) {
@@ -2923,7 +2940,8 @@
     sh.mesh.position.set(c.x + Math.cos(sh.angle) * (sh.radius + 60), c.y + sh.yOff, c.z + Math.sin(sh.angle) * (sh.radius + 60));
     sh.vel.set(0, 0, 0);
     const color = SHARKS.colors[regionAt(c.x, c.z)] || SHARKS.color;
-    sh.mesh.userData.mainMaterial.color.set(color);
+    // el tiburón glTF tiene su propia textura; teñirla la oscurece
+    if (!sh.mesh.userData.gltf) sh.mesh.userData.mainMaterial.color.set(color);
   }
 
   // Sharks share the sea with the diver: fewer close to Puerto Limón.
@@ -3332,6 +3350,7 @@
         glow: s.special ? 0xffb020 : null,
         sail: species.id === "pez_vela" || species.id === "marlin_azul",
         bill: billed,
+        kind: ["atun", "atun_rojo", "jurel"].includes(species.id) ? "tuna" : undefined,
       });
       s.group.add(mesh);
       s.fish.push({ mesh, r: 3 + (i % 3) * 2.4, a: (i / n) * Math.PI * 2, dy: rand(0, 1) });
